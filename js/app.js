@@ -1958,17 +1958,23 @@ document.addEventListener('keydown', (e) => {
   else if (['1', '2', '3', '4'].includes(e.key)) click(`[data-act="grade"][data-g="${e.key}"]`);
 });
 
-// The phrases you already knew before starting, added once per device.
-const ALREADY_KNOWN = [['Merhaba!', 'Hello!'], ['Seni seviyorum.', 'I love you.']];
+// Words added for you, once per device. Each batch has a number, so a later batch
+// still arrives on a device that already has the earlier ones.
+const SEEDS = [
+  [1, 'Merhaba!', 'Hello!', 'known'],
+  [1, 'Seni seviyorum.', 'I love you.', 'known'],
+  [2, 'Konuş!', 'Speak! Talk! (and the name of this app)', 'mine'],
+];
 function seedKnown() {
-  if (store.state.seeded) return;
+  const done = store.state.seeded === true ? 1 : store.state.seeded || 0;
   const now = Date.now();
-  for (const [tr, en] of ALREADY_KNOWN) {
+  for (const [batch, tr, en, src] of SEEDS) {
+    if (batch <= done) continue;
     const kind = kindOf(tr);
     const id = cardId(kind, tr);
-    if (!store.card(id)) store.putCard(srs.grade({ id, kind, tr, en, src: 'known', added: now }, 3, now));
+    if (!store.card(id)) store.putCard(srs.grade({ id, kind, tr, en, src, rank: 'A1', added: now }, 3, now));
   }
-  store.markSeeded();
+  store.markSeeded(Math.max(...SEEDS.map((s) => s[0])));
 }
 
 for (const type of ['touchend', 'click']) document.addEventListener(type, S.unlockAudio, { capture: true, once: true });

@@ -64,8 +64,8 @@ export const store = {
     changed('card', id, false);
   },
 
-  markSeeded() {
-    state.seeded = true;
+  markSeeded(batch) {
+    state.seeded = batch;
     persist();
   },
   // One right guess for a theme word; returns its new count.

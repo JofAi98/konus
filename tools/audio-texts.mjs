@@ -36,7 +36,7 @@ if (process.argv[2] === 'samples') {
     tokens(fill(it.tr)).forEach(add);
     it.words.forEach((w) => add(w.tr));
   }
-  ['Aferin', 'Harika'].forEach(add);
+  ['Aferin', 'Harika', 'Konuş!'].forEach(add);
   THEMES.forEach((t) => t.words.forEach((w) => { add(w.tr); tokens(w.tr).forEach(add); }));
   SOUNDS.forEach((s) => add(s.ex));
   ['Günaydın', 'Merhaba', 'İyi akşamlar', 'Aferin', 'Merhaba, nasılsın?', 'Teşekkür ederim', 'güzel', 'teşekkürler', 'akşam', 'akşamlar', 'seviyorum', 'anlamıyorum', 'Hazır mısın', 'Merhaba!', 'Seni seviyorum.'].forEach(add);
