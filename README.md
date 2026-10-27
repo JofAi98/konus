@@ -59,11 +59,11 @@ To record the whole course in a multilingual voice, use its id from `js/voices.j
 
 ## Levels and ranks
 
-Practice earns XP (a lesson or drill 30, a dialogue 25, a story 20, each review 2, each sentence said out loud 1 or 2, plus 10 for the first practice of the day). Level *L* needs `36 × (L − 1)^1.5` XP in total, so about 100 XP a day reaches level 20 in a month.
+Practice earns XP (a lesson or drill 30, a dialogue 25, a story 20, each review 2, each sentence said out loud 1 or 2, plus 10 for the first practice of the day). Only practice at your current rank counts: lower-rank material stays open but earns nothing. Every level costs 150 XP, and each rank holds 30 levels (A1 is 1 to 30, A2 is 31 to 60...). The last level of a rank is its cap, where its exam opens. XP is logged per day as `xp`, plus `xp_A2`, `xp_B1`... for ranks above A1.
 
 Inside A1, each item on the path has a level that opens it; stories open at 10, no-hints role-play at 15, the practice exam at 20, native speed at 25. The A1 exam opens at level 30 (20 questions, pass at 80%, one try a day). Passing stores `rank:A2` in progress, which opens everything marked A2. The schedule lives in `js/levels.js`; each lesson, drill, dialogue and story sets its own `level`.
 
-Hunter ranks sit on top of the European levels: F (tutorial), E (A1), E+ (A1+, level 20), D (A2), D+ (A2+, level 45), C (B1), C+ (level 80), B (B2), B+ (level 125), A (C1), A+ (level 175), S (C2). The tutorial is the three Sounds lessons, the first Build drill and the first dialogue.
+Hunter ranks sit on top of the European levels: F (tutorial), E (A1), E+ (A1+, level 20), D (A2), D+ (A2+, level 50), C (B1), C+ (level 80), B (B2), B+ (level 110), A (C1), A+ (level 140), S (C2). The tutorial is the three Sounds lessons, the first Build drill and the first dialogue.
 
 ## Files
 

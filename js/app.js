@@ -5,7 +5,7 @@ import * as srs from './srs.js';
 import { store, cardId, saveRecording, getRecording, dayKey } from './store.js';
 import * as sync from './sync.js';
 import { VOICES, SAMPLES } from './voices.js';
-import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, xpForLevel, levelFor, rankOf, rankIndex, totalXP, isOpen, featureOpen, unlocksAt } from './levels.js';
+import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, XP_PER_LEVEL, levelInfo, xpToReach, rankOf, rankIndex, isOpen, featureOpen, unlocksAt } from './levels.js';
 import { DRILLS, drillById } from './drills.js';
 import { DIALOGUES, dialogueById, WHO } from './dialogues.js';
 import { STORIES, storyById } from './stories.js';
@@ -123,8 +123,8 @@ function showMine(panel, blob) {
 /* ---------- Levels and XP ---------- */
 
 const me = () => {
-  const xp = totalXP(store.state.stats);
-  const m = { xp, level: levelFor(xp), rank: rankOf(store.state.progress), progress: store.state.progress };
+  const rank = rankOf(store.state.progress);
+  const m = { rank, progress: store.state.progress, ...levelInfo(store.state.stats, rank) };
   m.hunter = hunterRank(m);
   return m;
 };
@@ -165,7 +165,13 @@ function rankUp(h) {
   document.body.append(el);
   el.querySelector('button').focus();
 }
-const xpToGo = (level, m = me()) => Math.max(0, xpForLevel(level) - m.xp);
+const xpToGo = (level, m = me()) => xpToReach(level, m);
+
+// XP only counts at your own rank: an A1 phrase earns XP while you're A1, a B1 phrase while you're B1.
+// xpFrom is the rank of what's on screen; null means it belongs to your rank (like phrases you add).
+let xpFrom = null;
+const cardRank = (c) => (c?.src === 'known' ? 'A1' : pathItem(c?.src)?.rank || null);
+let belowNoted = false;
 
 // The next level (within A1) that opens something, and what it opens.
 function nextUnlock(m = me()) {
@@ -177,22 +183,28 @@ function nextUnlock(m = me()) {
   return null;
 }
 
-function award(n) {
+function award(n, from = xpFrom) {
   if (!n) return;
-  const before = me().level;
+  const m = me();
+  if (from && rankIndex(from) < rankIndex(m.rank.id)) {
+    if (!belowNoted) { belowNoted = true; xpPop(`${from} practice · no XP`); }
+    return;
+  }
+  const before = m.level;
   if (!store.state.stats.days[dayKey()]?.xp) n += XP.daily; // first practice of the day
   store.log('xp', n);
-  xpPop(n);
+  if (m.rank.id !== 'A1') store.log('xp_' + m.rank.id, n);
+  xpPop(`+${n} XP`);
   const after = me().level;
   if (after > before) levelUp(before, after);
   drawLevelChip();
 }
 
-function xpPop(n) {
+function xpPop(text) {
   const el = document.createElement('div');
   el.className = 'xp-pop';
   el.setAttribute('aria-hidden', 'true');
-  el.textContent = `+${n} XP`;
+  el.textContent = text;
   document.body.append(el);
   setTimeout(() => el.remove(), 1500);
 }
@@ -211,7 +223,7 @@ function levelUp(from, to) {
     <p class="eyebrow">Level up · <span lang="tr">Tebrikler!</span></p>
     <h2 id="lu-title" class="lu-num">Level ${to}</h2>
     ${opened.length ? `<p class="muted small">Now open:</p><ul class="lu-list">${opened.map((o) => `<li><b>${esc(o.title)}</b><span>${esc(o.sub)}</span></li>`).join('')}</ul>`
-    : `<p class="muted">${nx ? `Level ${nx.level} opens ${esc(nx.items.map((i) => i.title).join(', '))}.` : 'Keep going: the A1 exam opens at level 30.'}</p>`}
+    : `<p class="muted">${nx ? `Level ${nx.level} opens ${esc(nx.items.map((i) => i.title).join(', '))}.` : `Keep going: the ${esc(me().rank.id)} exam opens at level ${me().rank.examAt}.`}</p>`}
     <button class="btn primary">Continue</button>
   </div>`;
   el.querySelector('button').addEventListener('click', () => el.remove());
@@ -232,9 +244,7 @@ function drawLevelChip() {
 }
 
 function levelCardHTML(m = me()) {
-  const lo = xpForLevel(m.level);
-  const hi = xpForLevel(m.level + 1);
-  const pct = Math.round(((m.xp - lo) / (hi - lo)) * 100);
+  const pct = Math.round((m.into / XP_PER_LEVEL) * 100);
   const today = store.state.stats.days[dayKey()]?.xp || 0;
   const nx = nextUnlock(m);
   const h = m.hunter;
@@ -244,11 +254,11 @@ function levelCardHTML(m = me()) {
       <div class="lv-text">
         <p class="eyebrow">Rank ${h.id} · ${h.cefr ? `${h.cefr} ${esc(m.rank.name)}` : 'Tutorial'}</p>
         <h2 class="lv-num">Level ${m.level}</h2>
-        <p class="muted small">${m.xp.toLocaleString('en-GB')} XP</p>
+        <p class="muted small">${m.rankXp.toLocaleString('en-GB')} XP in ${m.rank.id}</p>
       </div>
     </div>
-    <div class="meter" role="progressbar" aria-label="Progress to level ${m.level + 1}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
-    <p class="muted small">${hi - m.xp} XP to level ${m.level + 1}</p>
+    <div class="meter" role="progressbar" aria-label="${m.capped ? 'Top level of this rank' : `Progress to level ${m.level + 1}`}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
+    <p class="muted small">${m.capped ? `Level ${m.level} is the top of ${m.rank.id}. Pass the <a href="#exam/${m.rank.id}">${m.rank.id} exam</a> to go on.` : `${XP_PER_LEVEL - m.into} XP to level ${m.level + 1}`}</p>
     <div class="goal">
       <span class="eyebrow">Today</span>
       <div class="meter amber" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="${DAILY_GOAL}" aria-valuenow="${Math.min(today, DAILY_GOAL)}"><span style="width:${Math.min(100, (today / DAILY_GOAL) * 100)}%"></span></div>
@@ -502,14 +512,15 @@ function pathView() {
   };
 
   view.innerHTML = `
-  <header class="page-head"><h1>Path</h1><p class="lede">Practice earns XP, and every level opens something new. By level 20 the whole A1 course is open. At level 30 the A1 exam opens: pass it to reach A2.</p></header>
+  <header class="page-head"><h1>Path</h1><p class="lede">Practice at your rank earns XP, and levels open the course step by step. By level 20 the whole A1 course is open. Level 30 is the top of A1: the A1 exam opens there, and passing it takes you to A2.</p></header>
 
   ${levelCardHTML(m)}
 
   <details class="howto levels-help"><summary>How levels work</summary>
     <p><b>XP.</b> A lesson or Build drill earns ${XP.lesson}, a dialogue ${XP.dialogue}, a story ${XP.story}, each review ${XP.review}, and each sentence you say out loud ${XP.spoken} (${XP.spoken + XP.clear} when it comes through clearly). Your first practice each day adds ${XP.daily}. Doing something again earns ${XP.again}.</p>
-    <p><b>Levels.</b> Each level needs a little more XP than the last. About ${DAILY_GOAL} XP a day, 15 to 20 minutes, reaches level 20 in a month.</p>
-    <p><b>Ranks.</b> Ranks follow the European levels: A1, A2, B1, B2, C1, C2. In A1, levels open lessons, drills, dialogues and stories step by step. The A1 exam opens at level 30: 20 questions of listening, speaking and conversation. Score 80% to reach A2, which opens all A2 grammar, vocabulary, dialogues and stories at once. Each rank after that ends with its own exam.</p>
+    <p><b>XP comes from your rank.</b> Only practice at your own rank counts. While you're A1, A1 phrases earn XP; once you're B1, it takes B1 phrases to earn the same XP. Older material stays open for practice, without XP.</p>
+    <p><b>Levels.</b> Every level costs the same ${XP_PER_LEVEL} XP. About ${DAILY_GOAL} XP a day, 15 to 20 minutes, reaches level 20 in a month. Each rank has 30 levels: A1 is 1 to 30, A2 is 31 to 60, and so on. The last level of a rank is its cap. Reaching it means you've done that rank's work, and its exam opens.</p>
+    <p><b>Ranks.</b> Ranks follow the European levels: A1, A2, B1, B2, C1, C2. In A1, levels open lessons, drills, dialogues and stories step by step. The A1 exam opens at level 30: 20 questions of listening, speaking and conversation. Score 80% to reach A2, which opens all A2 grammar, vocabulary, dialogues and stories at once. If you don't pass, it shows what to revise; try again the next day.</p>
     <p><b>Hunter ranks.</b> On top of the European levels you carry a rank from F to S. F is the tutorial: the three Sounds lessons, the first Build drill and the first dialogue. Finish them to reach E. Each European level has a plain rank and a + rank for its second half.</p>
     <ul class="ladder">${LADDER.map(([id, cefr, name]) => `<li class="${id === m.hunter.id ? 'on' : ''}">${badgeHTML({ id, letter: id[0], plus: id.endsWith('+') }, 'sm')}<b>${cefr || 'Tutorial'}</b><span>${esc(name)}</span></li>`).join('')}</ul>
     <p><b>What A1 means.</b> You can introduce yourself, ask and answer simple questions, and get through everyday moments like a meal, a café or a phone call, if people speak slowly.</p>
@@ -546,6 +557,7 @@ function lessonView(id) {
   const l = lessonById(id);
   if (!l) { location.hash = '#path'; return; }
   if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
+  xpFrom = pathItem(id).rank;
   if (!session || session.id !== 'L:' + id || session.finished) {
     const steps = [
       ...l.items.map((it, i) => ({ type: 'learn', it, n: i + 1 })),
@@ -574,6 +586,7 @@ function drillView(id) {
   const d = drillById(id);
   if (!d) { location.hash = '#path'; return; }
   if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
+  xpFrom = pathItem(id).rank;
   if (!session || session.id !== 'D:' + id || session.finished) {
     session = { id: 'D:' + id, kind: 'drill', drill: d, steps: [{ type: 'intro' }, ...d.items.map((it, i) => ({ type: 'build', it, n: i + 1 }))], i: 0, grades: {}, requeued: new Set(), ok: 0 };
   }
@@ -594,6 +607,7 @@ function drawStep() {
   const it = step.it;
   let body = '';
   s.revealed = false;
+  if (s.kind === 'review') xpFrom = cardRank(store.card(it.cardId));
 
   if (step.type === 'learn') {
     body = `<p class="eyebrow">New · ${step.n} of ${s.lesson.items.length}</p>
@@ -705,7 +719,7 @@ function gradeStep(g) {
     const card = store.card(it.cardId);
     if (card) store.putCard(srs.grade(card, g));
     store.log('reviews');
-    award(XP.review);
+    award(XP.review, cardRank(card));
     s.count++;
   } else {
     s.grades[it.tr] = g;
@@ -796,6 +810,7 @@ function talkView(id) {
   const d = dialogueById(id);
   if (!d) { location.hash = '#path'; return; }
   if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
+  xpFrom = d.rank;
   talk = { d, mode: 'intro', i: 0, scores: {}, listened: false };
   drawTalkIntro();
 }
@@ -1024,6 +1039,7 @@ function storyView(id) {
   const st = storyById(id);
   if (!st) { location.hash = '#path'; return; }
   if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
+  xpFrom = st.rank;
   const answers = {};
   const { pct, fresh } = storyWords(st);
   view.innerHTML = `
@@ -1134,6 +1150,7 @@ function examView(kind) {
   <p class="muted small">Pass mark: ${Math.round(20 * PASS)} of 20. ${mock ? '' : 'If you don\'t pass, you can try again tomorrow.'}${S.canListen() ? '' : ' This browser can\'t check speech, so in the speaking part you mark yourself.'}</p>
   ${failedToday ? '<p class="notice">Not this time. The exam opens again tomorrow: until then, the practice exam and your reviews are the best preparation.</p>'
     : `<div class="row"><button class="btn primary" data-act="exstart">${I.arrow}<span>Start</span></button></div>`}`;
+  xpFrom = 'A1';
   local = { exstart: () => { exam = buildExam(mock); drawExamQ(); } };
 }
 
@@ -1230,7 +1247,8 @@ function examResult() {
   const pass = e.right / n >= PASS;
   const wasA1 = !store.state.progress['rank:A2'];
   if (e.mock) award(XP.again);
-  else if (pass) { store.markLesson('rank:A2'); if (wasA1) award(XP.exam); else award(XP.again); }
+  else if (pass && wasA1) { store.markLesson('rank:A2'); award(XP.exam, null); }
+  else if (pass) award(XP.again);
   else store.log('examFail');
   exam = null;
   view.innerHTML = `<section class="done">
@@ -1359,6 +1377,7 @@ function detailView(tr, en, { card = null, note = '' } = {}) {
 function itemView(id) {
   const c = store.card(id);
   if (!c) { view.innerHTML = '<p class="notice">This card is no longer in your vocab.</p><a class="btn" href="#vocab">Back to vocab</a>'; local = {}; return; }
+  xpFrom = cardRank(c);
   detailView(c.tr, c.en, { card: c });
 }
 
@@ -1366,6 +1385,7 @@ function wordView(text) {
   const k = P.clean(text);
   const card = store.card(cardId('word', text));
   const cw = COURSE_WORDS.find((w) => P.clean(w.tr) === k);
+  xpFrom = card ? cardRank(card) : cw ? 'A1' : null;
   detailView(card?.tr || cw?.tr || text, card?.en || cw?.en || glossMap().get(k) || '', { card });
 }
 
@@ -1712,6 +1732,8 @@ function render() {
   const arg = decodeURIComponent(rest.join('/'));
   cleanup?.(); cleanup = null;
   playToken++;
+  xpFrom = null;
+  belowNoted = false;
   document.querySelector('.levelup')?.remove();
   S.stopListening();
   if (recorder) { recorder.stop(); recorder = null; }

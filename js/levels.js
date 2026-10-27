@@ -1,7 +1,8 @@
-// Levels and ranks. Practice earns XP; each level needs a little more than the last.
+// Levels and ranks. Ranks follow the European levels (A1 to C2) and decide what you can learn.
+// Levels track your practice: every level costs the same XP, and each rank holds 30 of them
+// (A1 is 1 to 30, A2 is 31 to 60...). Only practice at your own rank earns XP, so the top
+// level of a rank means you've done that rank's work, and its exam opens there.
 // About 100 XP a day (15 to 20 minutes) reaches level 20 in a month.
-// Ranks follow the European levels (A1 to C2). Inside A1, levels open things one by one.
-// From A2 on, passing the rank exam opens everything in the new rank at once.
 import { LESSONS } from './course.js';
 import { DRILLS } from './drills.js';
 import { DIALOGUES } from './dialogues.js';
@@ -13,23 +14,39 @@ export const XP = {
 };
 export const DAILY_GOAL = 100;
 
-const A = 36;
-export const xpForLevel = (level) => Math.round(A * Math.max(0, level - 1) ** 1.5);
-export function levelFor(xp) {
-  let L = 1;
-  while (xpForLevel(L + 1) <= xp) L++;
-  return L;
-}
+export const XP_PER_LEVEL = 150;
+export const LEVELS_PER_RANK = 30;
 
 export const RANKS = [
   { id: 'A1', name: 'Beginner', tr: 'Başlangıç', examAt: 30 },
   { id: 'A2', name: 'Elementary', tr: 'Temel', examAt: 60 },
-  { id: 'B1', name: 'Intermediate', tr: 'Orta', examAt: 100 },
-  { id: 'B2', name: 'Upper intermediate', tr: 'Orta üstü', examAt: 150 },
-  { id: 'C1', name: 'Advanced', tr: 'İleri', examAt: 200 },
+  { id: 'B1', name: 'Intermediate', tr: 'Orta', examAt: 90 },
+  { id: 'B2', name: 'Upper intermediate', tr: 'Orta üstü', examAt: 120 },
+  { id: 'C1', name: 'Advanced', tr: 'İleri', examAt: 150 },
   { id: 'C2', name: 'Mastery', tr: 'Ustalık', examAt: null },
 ];
 export const rankIndex = (id) => RANKS.findIndex((r) => r.id === id);
+
+// XP is logged per day as "xp" (all of it) and "xp_A2", "xp_B1"... for ranks above A1,
+// so whatever isn't tagged with a higher rank belongs to A1.
+export function rankXP(stats, id) {
+  const days = Object.values(stats.days || {});
+  const sum = (key) => days.reduce((n, d) => n + (d[key] || 0), 0);
+  if (id !== 'A1') return sum('xp_' + id);
+  return sum('xp') - RANKS.slice(1).reduce((n, r) => n + sum('xp_' + r.id), 0);
+}
+
+// Your level inside your rank. The last level of a rank is its cap: it stays there until the exam.
+export function levelInfo(stats, rank) {
+  const first = rankIndex(rank.id) * LEVELS_PER_RANK + 1;
+  const xp = rankXP(stats, rank.id);
+  const steps = Math.min(LEVELS_PER_RANK - 1, Math.floor(xp / XP_PER_LEVEL));
+  const capped = steps === LEVELS_PER_RANK - 1 && rank.examAt !== null;
+  return { level: first + steps, first, rankXp: xp, into: capped ? XP_PER_LEVEL : xp - steps * XP_PER_LEVEL, capped };
+}
+
+// XP still needed, inside your rank, to reach a level.
+export const xpToReach = (level, { first, rankXp }) => Math.max(0, (level - first) * XP_PER_LEVEL - rankXp);
 
 // Reached ranks are kept in progress as "rank:A2" and so on.
 export function rankOf(progress) {
@@ -46,7 +63,7 @@ export function rankOf(progress) {
 export const TUTORIAL = ['u0l1', 'u0l2', 'u0l3', 'd1', 'dl1'];
 export const HUNTER = ['F', 'E', 'E+', 'D', 'D+', 'C', 'C+', 'B', 'B+', 'A', 'A+', 'S'];
 const LETTER = { A1: 'E', A2: 'D', B1: 'C', B2: 'B', C1: 'A', C2: 'S' };
-const PLUS_AT = { A1: 20, A2: 45, B1: 80, B2: 125, C1: 175 };
+const PLUS_AT = { A1: 20, A2: 50, B1: 80, B2: 110, C1: 140 };
 export const LADDER = [
   ['S', 'C2', 'Mastery'], ['A+', 'C1+', ''], ['A', 'C1', 'Advanced'], ['B+', 'B2+', ''], ['B', 'B2', 'Upper intermediate'],
   ['C+', 'B1+', ''], ['C', 'B1', 'Intermediate'], ['D+', 'A2+', ''], ['D', 'A2', 'Elementary'], ['E+', 'A1+', ''], ['E', 'A1', 'Beginner'], ['F', '', 'Before A1'],
@@ -62,11 +79,10 @@ export function hunterRank({ level, rank, progress }) {
   const plus = !!plusAt && level >= plusAt;
   const next = !plusAt ? 'The highest rank there is.'
     : !plus ? `${letter}+ at level ${plusAt}`
-    : `${HUNTER[HUNTER.indexOf(letter + '+') + 1]}: pass the ${rank.id} exam${rank.examAt ? `, which opens at level ${rank.examAt}` : ''}`;
+    : `${HUNTER[HUNTER.indexOf(letter + '+') + 1]}: pass the ${rank.id} exam, which opens at level ${rank.examAt}`;
   return { id: letter + (plus ? '+' : ''), letter, plus, cefr: rank.id + (plus ? '+' : ''), tutorialDone, next };
 }
 
-export const totalXP =(stats) => Object.values(stats.days || {}).reduce((sum, d) => sum + (d.xp || 0), 0);
 
 // Abilities that open with a level rather than a piece of content.
 export const FEATURES = [
