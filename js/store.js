@@ -63,6 +63,10 @@ export const store = {
     changed('card', id, false);
   },
 
+  markSeeded() {
+    state.seeded = true;
+    persist();
+  },
   markLesson(id) {
     if (!state.progress[id]) state.progress[id] = { at: Date.now() };
     state.metaAt = Date.now();

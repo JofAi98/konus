@@ -941,7 +941,21 @@ document.addEventListener('keydown', (e) => {
   else if (['1', '2', '3', '4'].includes(e.key)) click(`[data-act="grade"][data-g="${e.key}"]`);
 });
 
+// The phrases you already knew before starting, added once per device.
+const ALREADY_KNOWN = [['Merhaba!', 'Hello!'], ['Seni seviyorum.', 'I love you.']];
+function seedKnown() {
+  if (store.state.seeded) return;
+  const now = Date.now();
+  for (const [tr, en] of ALREADY_KNOWN) {
+    const kind = kindOf(tr);
+    const id = cardId(kind, tr);
+    if (!store.card(id)) store.putCard(srs.grade({ id, kind, tr, en, src: 'known', added: now }, 3, now));
+  }
+  store.markSeeded();
+}
+
 S.setVoice(settings().voiceURI, settings().rate);
+seedKnown();
 shell();
 window.addEventListener('hashchange', render);
 render();
