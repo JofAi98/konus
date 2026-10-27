@@ -1759,7 +1759,7 @@ function settingsView() {
   </section>
 
   <section class="block">
-    <h2 class="h2">Sync</h2>
+    <h2 class="h2">Account and security</h2>
     <div id="sync-panel"></div>
   </section>
 
@@ -1781,43 +1781,42 @@ function settingsView() {
 
   <p class="muted small foot">Konuş · Free and open. Your recordings never leave this device.</p>`;
 
-  const authSubmit = async (create) => {
-    const email = $('#au-email').value.trim();
-    const pass = $('#au-pass').value;
-    const msg = $('#au-msg');
-    if (!email || !pass) { msg.textContent = 'Type your email and a password.'; return; }
-    msg.textContent = create ? 'Creating your account…' : 'Signing in…';
-    const err = await sync.signIn(email, pass, create);
-    if (err && $('#au-msg')) $('#au-msg').textContent = err;
-  };
-
+  const twoStep = { key: '', uri: '' };
   const drawSync = (st2) => {
     const el = $('#sync-panel');
-    if (!el) return;
-    if (st2.state === 'off') el.innerHTML = '<p class="muted">Sync is not set up yet. Progress is saved on this device. Once Firebase is connected (free), sign in here and your vocab follows you to every device.</p>';
-    else if (st2.state === 'loading') el.innerHTML = '<p class="muted">Connecting…</p>';
-    else if (st2.state === 'signed-out') {
-      el.innerHTML = `<p class="muted">Use the same email and password on each device. Everything you learn then syncs automatically.</p>
-        <form id="auth-form" class="authform" novalidate>
-          <label for="au-email">Email</label>
-          <input id="au-email" type="email" autocomplete="username" inputmode="email" required>
-          <label for="au-pass">Password</label>
-          <input id="au-pass" type="password" autocomplete="current-password" minlength="6" required>
-          <div class="row">
-            <button class="btn primary" type="submit">Sign in</button>
-            <button class="btn" type="button" data-act="signup">Create account</button>
-            <button class="btn ghost" type="button" data-act="forgot">Forgot password</button>
-          </div>
-          <p class="formmsg" id="au-msg" aria-live="polite"></p>
-        </form>`;
-      $('#auth-form').addEventListener('submit', (e) => { e.preventDefault(); local.signin(); });
+    if (!el || st2.state !== 'on') return;
+    const synced = st2.lastSync ? `, synced at ${new Date(st2.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+    let two;
+    if (st2.twoStep) {
+      two = `<p class="okline">${I.check}<span>Two-step sign-in is on. A new device asks for your password and the 6-digit code from your authenticator.</span></p>`;
+    } else if (!st2.verified) {
+      two = `<p><b>Two-step sign-in is off.</b> Step 1 of 2: confirm your email address. Tap Send email, open the link in it, then come back and tap I've confirmed it.</p>
+        <div class="row"><button class="btn primary" data-act="sverify">Send email</button><button class="btn" data-act="sreload">I've confirmed it</button></div>`;
+    } else if (!twoStep.key) {
+      two = `<p><b>Two-step sign-in is off.</b> Step 2 of 2: connect your authenticator, like Proton Pass. It takes a minute.</p>
+        <div class="row"><button class="btn primary" data-act="sstart">Set up two-step sign-in</button></div>`;
+    } else {
+      two = `<ol class="steps">
+          <li>Copy this key.<div class="secret"><code>${esc(twoStep.key.replace(/(.{4})/g, '$1 ').trim())}</code></div>
+            <div class="row"><button class="btn small" data-act="scopy" data-v="key">${I.copy}<span>Copy key</span></button><button class="btn small ghost" data-act="scopy" data-v="uri">Copy setup link</button></div></li>
+          <li>In Proton Pass, open the login you use for Konuş (or create one with this email). Tap Edit, then add the key in the 2FA secret key (TOTP) field, and save.</li>
+          <li>Type the 6-digit code Proton Pass now shows for it.</li>
+        </ol>
+        <label for="s-code">Code</label>
+        <input id="s-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6">
+        <div class="row"><button class="btn primary" data-act="sfinish">Turn on</button></div>`;
     }
-    else if (st2.state === 'error') el.innerHTML = `<p class="notice">${esc(st2.error)}</p>`;
-    else el.innerHTML = `<p>Synced as <b>${esc(st2.email)}</b>${st2.lastSync ? `, last at ${new Date(st2.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.</p>${st2.error ? `<p class="notice">${esc(st2.error)}</p>` : ''}<button class="btn ghost" data-act="signout">Sign out</button>`;
+    el.innerHTML = `<p>Signed in as <b>${esc(st2.email)}</b>${synced}.</p>
+      ${st2.error ? `<p class="notice">${esc(st2.error)}</p>` : ''}
+      ${two}
+      <p class="formmsg" id="s-msg" aria-live="polite"></p>
+      <p class="muted small">Account ID <code class="uid">${esc(st2.uid)}</code></p>
+      <button class="btn ghost" data-act="signout">Sign out</button>`;
   };
   drawSync(st);
   const off = sync.onStatus(drawSync);
   cleanup = off;
+  const say = (t) => { const m = $('#s-msg'); if (m) m.textContent = t || ''; };
 
   const voiceRow = (v) => {
     const inUse = (settings().recordedVoice || 'emel') === v.id;
@@ -1869,14 +1868,27 @@ function settingsView() {
       S.setRecordedVoice(el.dataset.v);
       drawVoices();
     },
-    signin: () => authSubmit(false),
-    signup: () => authSubmit(true),
-    async forgot() {
-      const email = $('#au-email').value.trim();
-      const msg = $('#au-msg');
-      if (!email) { msg.textContent = 'Type your email first, then tap Forgot password.'; return; }
-      const err = await sync.resetPassword(email);
-      msg.textContent = err || `A reset link is on its way to ${email}.`;
+    async sverify() { const err = await sync.sendVerification(); say(err || 'Sent. Open the link in the email, then tap I\'ve confirmed it.'); },
+    async sreload() { const err = await sync.reloadUser(); if (err) say(err); else if (!sync.status().verified) say('Not confirmed yet. Open the link in the email first.'); },
+    async sstart() {
+      say('Preparing…');
+      const r = await sync.startTwoStep();
+      if (r.error) { say(r.error); return; }
+      Object.assign(twoStep, r);
+      drawSync(sync.status());
+    },
+    async scopy(el) {
+      const text = twoStep[el.dataset.v];
+      try { await navigator.clipboard.writeText(text); say('Copied.'); } catch { say(text); }
+    },
+    async sfinish() {
+      const code = $('#s-code').value;
+      if (!/^\d{6}$/.test(code.trim())) { say('Type the 6-digit code.'); return; }
+      const err = await sync.finishTwoStep(code);
+      if (err) { say(err); return; }
+      twoStep.key = ''; twoStep.uri = '';
+      drawSync(sync.status());
+      say('Done. Two-step sign-in is on.');
     },
     signout: () => sync.signOut(),
     export() {
@@ -1895,6 +1907,83 @@ function settingsView() {
   };
 }
 
+/* ---------- The lock: nothing opens until you sign in ---------- */
+
+const isUnlocked = (st) => st.state === 'off' || (st.state === 'on' && st.allowed);
+let gateShown = '';
+
+function gateView(st) {
+  const key = `${st.state}|${st.error}`;
+  if (gateShown === key && st.state !== 'error') return;
+  gateShown = key;
+  document.body.classList.add('locked');
+  const brand = '<p class="gate-brand" lang="tr">Konuş</p>';
+  if (st.state === 'loading') {
+    view.innerHTML = `<section class="gate">${brand}<p class="muted">Opening…</p></section>`;
+    local = {};
+    return;
+  }
+  if (st.state === 'error') {
+    view.innerHTML = `<section class="gate">${brand}<p class="notice">${esc(st.error || 'Could not reach the sign-in service.')} The first sign-in on a device needs a connection.</p>
+      <div class="row"><button class="btn primary" data-act="greload">Try again</button></div></section>`;
+    local = { greload: () => location.reload() };
+    return;
+  }
+  if (st.state === 'code') {
+    view.innerHTML = `<section class="gate">${brand}
+      <h1>Your code</h1>
+      <p class="lede">Open Proton Pass and type the 6-digit code for Konuş.</p>
+      <form id="gate-form" class="authform" novalidate>
+        <label for="g-code">Code</label>
+        <input id="g-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" required>
+        <div class="row"><button class="btn primary" type="submit">Confirm</button><button class="btn ghost" type="button" data-act="gcancel">Back</button></div>
+        <p class="formmsg" id="g-msg" aria-live="polite"></p>
+      </form></section>`;
+    local = { gcancel: () => sync.cancelCode() };
+    $('#gate-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = $('#g-code').value;
+      if (!/^\d{6}$/.test(code.trim())) { $('#g-msg').textContent = 'Type the 6-digit code.'; return; }
+      $('#g-msg').textContent = 'Checking…';
+      const err = await sync.confirmCode(code);
+      if (err && $('#g-msg')) $('#g-msg').textContent = err;
+    });
+    $('#g-code').focus();
+    return;
+  }
+  view.innerHTML = `<section class="gate">${brand}
+    <h1>Sign in</h1>
+    <p class="lede">This app is private. Sign in to open it.</p>
+    ${st.error ? `<p class="notice">${esc(st.error)}</p>` : ''}
+    <form id="gate-form" class="authform" novalidate>
+      <label for="g-email">Email</label>
+      <input id="g-email" type="email" autocomplete="username" inputmode="email" required>
+      <label for="g-pass">Password</label>
+      <input id="g-pass" type="password" autocomplete="current-password" required>
+      <div class="row"><button class="btn primary" type="submit">Sign in</button><button class="btn ghost" type="button" data-act="gforgot">Forgot password</button></div>
+      <p class="formmsg" id="g-msg" aria-live="polite"></p>
+    </form></section>`;
+  local = {
+    async gforgot() {
+      const email = $('#g-email').value.trim();
+      const msg = $('#g-msg');
+      if (!email) { msg.textContent = 'Type your email first, then tap Forgot password.'; return; }
+      const err = await sync.resetPassword(email);
+      msg.textContent = err || `If that email has an account, a reset link is on its way.`;
+    },
+  };
+  $('#gate-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#g-email').value.trim();
+    const pass = $('#g-pass').value;
+    const msg = $('#g-msg');
+    if (!email || !pass) { msg.textContent = 'Type your email and password.'; return; }
+    msg.textContent = 'Signing in…';
+    const err = await sync.signIn(email, pass);
+    if (err && $('#g-msg')) $('#g-msg').textContent = err;
+  });
+}
+
 /* ---------- router and shell ---------- */
 
 const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, drill: drillView, talk: talkView, story: storyView, exam: examView, themes: themesView, theme: themeView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, add: addView, settings: settingsView };
@@ -1905,6 +1994,10 @@ let cleanup = null;
 let current = '';
 
 function render() {
+  const st = sync.status();
+  if (!isUnlocked(st)) { cleanup?.(); cleanup = null; current = ''; S.stopSpeaking(); gateView(st); return; }
+  gateShown = '';
+  document.body.classList.remove('locked');
   const [name, ...rest] = (location.hash.slice(1) || 'today').split('/');
   const route = ROUTES[name] ? name : 'today';
   const arg = decodeURIComponent(rest.join('/'));
@@ -1929,9 +2022,12 @@ function shell() {
     .map(([k, t, ic]) => `<a href="#${k}" data-tab="${k}">${ic}<span>${t}</span></a>`).join('');
   $('#settings-link').innerHTML = I.sliders;
   drawLevelChip();
+  let open = null;
   sync.onStatus((st) => {
+    const now = isUnlocked(st);
+    if (now !== open) { open = now; render(); } else if (!now) gateView(st);
     const el = $('#sync');
-    const map = { on: 'Synced', 'signed-out': 'Sign in to sync', error: 'Sync paused' };
+    const map = { on: 'Synced', error: 'Sync paused' };
     el.hidden = !map[st.state];
     el.textContent = map[st.state] || '';
     el.className = `sync ${st.state}`;
@@ -1994,6 +2090,8 @@ window.addEventListener('speech-error', (e) => {
     ? 'No Turkish voice on this device. iPhone: Settings, Accessibility, Spoken Content, Voices, Turkish.'
     : 'The audio could not play. Check that silent mode is off and the volume is up, then tap again.');
 });
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
 
 S.setVoice(settings().voiceURI, settings().rate);
 S.setRecordedVoice(settings().recordedVoice);

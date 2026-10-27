@@ -42,9 +42,17 @@ Every later `git push` updates the app. It picks up the new version the next tim
 2. **Build → Authentication → Get started.** Under Sign-in method choose **Email/password**, switch on the first option (leave email link off), Save.
 3. **Build → Firestore Database → Create database.** Pick a location in Europe, start in **production mode**, Create. Open the **Rules** tab, replace everything with the contents of `firestore.rules`, Publish.
 4. **Project settings** (gear icon) **→ General → Your apps → Web** (the `</>` icon). Nickname `Konuş`, don't tick Hosting, Register app. Copy the `firebaseConfig` block into `js/firebase-config.js`.
-5. Push the change. Open the app, go to Settings, tap **Create account** once, then **Sign in** with the same email and password on each other device.
+5. Create your account in the Firebase console (Authentication → Users → Add user), put its User UID in `ownerUid` in `js/firebase-config.js`, and push.
 
 The Firebase config is not a secret: it only identifies the project. The rules in `firestore.rules` are what keep your data private to your account.
+
+## Security
+
+- The app opens only after signing in with the owner's account (`ownerUid`). There is no sign-up in the app; anyone else sees only the sign-in screen.
+- Two-step sign-in: password plus a 6-digit code from an authenticator (TOTP). Set it up in Settings → Account and security.
+- `firestore.rules` lets only the owner's account read or write anything.
+- The page may only load scripts from itself and Firebase (Content Security Policy), asks search engines not to index it, and keeps the Firebase sign-in code cached so it opens offline.
+- Firebase side, done in the consoles: upgrade to Identity Platform (free), turn off sign-ups, enable TOTP, publish the rules, restrict the API key to the app's address.
 
 ## Voices
 

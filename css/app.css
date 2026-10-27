@@ -421,6 +421,21 @@ input[type="range"] { width: 100%; accent-color: var(--cobalt); }
 .sel select { padding: 9px 10px; font-size: 15px; letter-spacing: 0; text-transform: none; color: var(--ink); }
 .vmeta { font: 11px var(--f-mono); color: var(--muted); letter-spacing: 0.03em; }
 
+/* The lock */
+body.locked .tabs, body.locked .top { display: none; }
+.gate { display: flex; flex-direction: column; gap: 14px; max-width: 420px; padding-top: 6vh; }
+.gate-brand { font: italic 500 3rem/1 var(--f-display); letter-spacing: -0.02em; color: var(--cobalt); }
+.gate h1 { font: 500 clamp(1.8rem, 6vw, 2.2rem)/1.1 var(--f-display); }
+.gate input { font-size: 16px; }
+#g-code, #s-code { font: 500 1.4rem var(--f-mono); letter-spacing: 0.3em; max-width: 220px; }
+.okline { display: flex; gap: 10px; align-items: flex-start; color: var(--good); }
+.okline svg { width: 20px; height: 20px; flex: none; margin-top: 3px; }
+.okline span { color: var(--ink-2); }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 12px; }
+.secret { margin: 8px 0; padding: 12px; border: 1px dashed var(--line); border-radius: var(--r-s); background: var(--sunk); }
+.secret code { font: 500 15px/1.6 var(--f-mono); word-break: break-all; user-select: all; }
+.uid { font: 12px var(--f-mono); word-break: break-all; }
+
 /* Exams */
 .exam-parts { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .exam-parts li { display: flex; flex-direction: column; padding: 12px 0; border-bottom: 1px solid var(--line); }
