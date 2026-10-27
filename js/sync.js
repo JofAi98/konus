@@ -27,7 +27,6 @@ export async function init() {
     const app = appMod.initializeApp(firebaseConfig);
     auth = A.getAuth(app);
     fdb = F.getFirestore(app);
-    A.getRedirectResult(auth).catch(() => {});
     A.onAuthStateChanged(auth, (u) => {
       user = u;
       if (u) start(); else stop();
@@ -47,18 +46,32 @@ export async function init() {
   }
 }
 
-export async function signIn() {
-  if (!auth) return;
-  const provider = new A.GoogleAuthProvider();
+const AUTH_ERRORS = {
+  'auth/invalid-credential': 'Wrong email or password.',
+  'auth/wrong-password': 'Wrong email or password.',
+  'auth/user-not-found': 'No account with this email yet. Tap Create account.',
+  'auth/email-already-in-use': 'This email already has an account. Tap Sign in instead.',
+  'auth/weak-password': 'Use at least 6 characters for the password.',
+  'auth/invalid-email': 'That email address doesn\'t look right.',
+  'auth/missing-password': 'Type your password.',
+  'auth/too-many-requests': 'Too many tries. Wait a few minutes, then try again.',
+  'auth/network-request-failed': 'No connection. Try again when you\'re online.',
+};
+const authError = (e) => AUTH_ERRORS[e.code] || e.message;
+
+// Returns an error message to show, or null when it worked.
+export async function signIn(email, password, create = false) {
+  if (!auth) return 'Sync is still loading.';
   try {
-    await A.signInWithPopup(auth, provider);
-  } catch (e) {
-    if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(e.code)) {
-      await A.signInWithRedirect(auth, provider);
-    } else if (e.code !== 'auth/popup-closed-by-user') {
-      errorMsg = e.message; emit();
-    }
-  }
+    if (create) await A.createUserWithEmailAndPassword(auth, email, password);
+    else await A.signInWithEmailAndPassword(auth, email, password);
+    return null;
+  } catch (e) { return authError(e); }
+}
+
+export async function resetPassword(email) {
+  if (!auth) return 'Sync is still loading.';
+  try { await A.sendPasswordResetEmail(auth, email); return null; } catch (e) { return authError(e); }
 }
 export async function signOut() { if (auth) await A.signOut(auth); }
 

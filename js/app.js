@@ -804,12 +804,37 @@ function settingsView() {
 
   <p class="muted small foot">Konuş · Free and open. Your recordings never leave this device.</p>`;
 
+  const authSubmit = async (create) => {
+    const email = $('#au-email').value.trim();
+    const pass = $('#au-pass').value;
+    const msg = $('#au-msg');
+    if (!email || !pass) { msg.textContent = 'Type your email and a password.'; return; }
+    msg.textContent = create ? 'Creating your account…' : 'Signing in…';
+    const err = await sync.signIn(email, pass, create);
+    if (err && $('#au-msg')) $('#au-msg').textContent = err;
+  };
+
   const drawSync = (st2) => {
     const el = $('#sync-panel');
     if (!el) return;
     if (st2.state === 'off') el.innerHTML = '<p class="muted">Sync is not set up yet. Progress is saved on this device. Once Firebase is connected (free), sign in here and your vocab follows you to every device.</p>';
     else if (st2.state === 'loading') el.innerHTML = '<p class="muted">Connecting…</p>';
-    else if (st2.state === 'signed-out') el.innerHTML = '<p class="muted">Sign in once on each device. Everything you learn then syncs automatically.</p><button class="btn primary" data-act="signin">Sign in with Google</button>';
+    else if (st2.state === 'signed-out') {
+      el.innerHTML = `<p class="muted">Use the same email and password on each device. Everything you learn then syncs automatically.</p>
+        <form id="auth-form" class="authform" novalidate>
+          <label for="au-email">Email</label>
+          <input id="au-email" type="email" autocomplete="username" inputmode="email" required>
+          <label for="au-pass">Password</label>
+          <input id="au-pass" type="password" autocomplete="current-password" minlength="6" required>
+          <div class="row">
+            <button class="btn primary" type="submit">Sign in</button>
+            <button class="btn" type="button" data-act="signup">Create account</button>
+            <button class="btn ghost" type="button" data-act="forgot">Forgot password</button>
+          </div>
+          <p class="formmsg" id="au-msg" aria-live="polite"></p>
+        </form>`;
+      $('#auth-form').addEventListener('submit', (e) => { e.preventDefault(); local.signin(); });
+    }
     else if (st2.state === 'error') el.innerHTML = `<p class="notice">${esc(st2.error)}</p>`;
     else el.innerHTML = `<p>Synced as <b>${esc(st2.email)}</b>${st2.lastSync ? `, last at ${new Date(st2.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.</p>${st2.error ? `<p class="notice">${esc(st2.error)}</p>` : ''}<button class="btn ghost" data-act="signout">Sign out</button>`;
   };
@@ -834,7 +859,15 @@ function settingsView() {
   });
 
   local = {
-    signin: () => sync.signIn(),
+    signin: () => authSubmit(false),
+    signup: () => authSubmit(true),
+    async forgot() {
+      const email = $('#au-email').value.trim();
+      const msg = $('#au-msg');
+      if (!email) { msg.textContent = 'Type your email first, then tap Forgot password.'; return; }
+      const err = await sync.resetPassword(email);
+      msg.textContent = err || `A reset link is on its way to ${email}.`;
+    },
     signout: () => sync.signOut(),
     export() {
       const blob = new Blob([JSON.stringify(store.state, null, 1)], { type: 'application/json' });

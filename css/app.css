@@ -223,7 +223,8 @@ body.focus main { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
 
 /* Forms */
 label { font-size: 14px; font-weight: 500; color: var(--ink-2); margin-top: 6px; }
-input[type="text"], input[type="search"], select, textarea { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); }
+.authform { display: flex; flex-direction: column; gap: 6px; }
+input[type="text"], input[type="search"], input[type="email"], input[type="password"], select, textarea { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); }
 textarea { resize: vertical; font-family: var(--f-mono); font-size: 14px; }
 input[type="range"] { width: 100%; accent-color: var(--cobalt); }
 .switch { display: flex; align-items: center; gap: 10px; cursor: pointer; }
