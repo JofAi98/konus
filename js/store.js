@@ -7,7 +7,7 @@ const blank = () => ({
   cards: {},
   progress: {},
   stats: { days: {} },
-  settings: { name: 'Giosuè', showSpelling: true, voiceURI: '', rate: 0.9, settingsAt: 0 },
+  settings: { name: 'Giosuè', showSpelling: true, recordedVoice: 'emel', voiceURI: '', rate: 0.9, settingsAt: 0 },
   metaAt: 0,
 });
 
@@ -102,8 +102,8 @@ export const store = {
     changed('meta', null, true);
   },
   metaForSync() {
-    const { name, showSpelling, settingsAt } = state.settings;
-    return { progress: state.progress, stats: state.stats, settings: { name, showSpelling, settingsAt }, updatedAt: Date.now() };
+    const { name, showSpelling, recordedVoice, settingsAt } = state.settings;
+    return { progress: state.progress, stats: state.stats, settings: { name, showSpelling, recordedVoice, settingsAt }, updatedAt: Date.now() };
   },
 
   replaceAll(next) {

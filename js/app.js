@@ -4,6 +4,7 @@ import * as S from './speech.js';
 import * as srs from './srs.js';
 import { store, cardId, saveRecording, getRecording } from './store.js';
 import * as sync from './sync.js';
+import { VOICES, SAMPLES } from './voices.js';
 
 /* ---------- helpers ---------- */
 
@@ -149,7 +150,7 @@ const globalActions = {
     const label = $('span', el);
     if (listeningBtn) { S.stopListening(); return; }
     if (!S.canListen()) { box.innerHTML = `<p class="notice">${MIC_ERRORS.unsupported}</p>`; return; }
-    speechSynthesis?.cancel();
+    S.stopSpeaking();
     listeningBtn = el;
     el.classList.add('live');
     label.textContent = 'Listening. Tap to stop';
@@ -185,7 +186,7 @@ const globalActions = {
     }
     if (!S.canRecord()) { $('.result', panel).innerHTML = `<p class="notice">${MIC_ERRORS.unsupported}</p>`; return; }
     try {
-      speechSynthesis?.cancel();
+      S.stopSpeaking();
       recorder = await S.startRecording();
       el.classList.add('live'); label.textContent = 'Stop';
     } catch {
@@ -428,7 +429,7 @@ function gradeStep(g) {
 
 function advance() {
   S.stopListening();
-  speechSynthesis?.cancel();
+  S.stopSpeaking();
   session.i++;
   if (session.i >= session.steps.length) finish();
   else { drawStep(); view.focus({ preventScroll: true }); window.scrollTo(0, 0); }
@@ -749,6 +750,8 @@ function addView() {
 
 /* ---------- Settings ---------- */
 
+const voiceUI = { sample: 0 };
+
 function settingsView() {
   const s = settings();
   const voices = S.turkishVoices();
@@ -766,18 +769,20 @@ function settingsView() {
     <p class="muted small">Turn it off to learn from sound only: you'll see just the sound line. Turkish spelling is so regular that reading comes almost free later.</p>
   </section>
 
-  <section class="block">
+  <section class="block" id="voice">
     <h2 class="h2">Voice</h2>
-    ${voices.length ? `<label for="set-voice">Turkish voice</label>
-      <select id="set-voice"><option value="">Best available</option>${voices.map((v) => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === s.voiceURI ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select>`
-    : '<p class="notice">No Turkish voice on this device yet.</p>'}
+    <p class="muted small">Pick a sentence, play it in each voice, and choose the one you want to learn from.</p>
+    <div class="filters samples" aria-label="Sample sentence">${SAMPLES.map((t, i) => `<button class="filter${i === voiceUI.sample ? ' on' : ''}" data-act="sample" data-i="${i}" lang="tr">${esc(t)}</button>`).join('')}</div>
+    <div id="voices"></div>
     <label for="set-rate">Speed <output id="rate-out">${Math.round(s.rate * 100)}%</output></label>
     <input id="set-rate" type="range" min="0.6" max="1.1" step="0.05" value="${s.rate}">
-    <div class="row"><button class="btn" data-act="play" data-text="Merhaba, nasılsın?">${I.play}<span>Test the voice</span></button></div>
-    <details class="howto"><summary>Get a better Turkish voice (free)</summary>
-      <p><b>Mac:</b> System Settings, Accessibility, Spoken Content, System voice, Manage Voices. Find Turkish and download Yelda (Enhanced).</p>
+    <details class="howto"><summary>Device voice settings</summary>
+      <p>The device voice reads anything without a recording, like phrases you add yourself.</p>
+      ${voices.length ? `<label for="set-voice">Device voice</label>
+        <select id="set-voice"><option value="">Best available</option>${voices.map((v) => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === s.voiceURI ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select>`
+      : '<p class="notice">No Turkish device voice found yet.</p>'}
+      <p><b>Better device voice, Mac:</b> System Settings, Accessibility, Spoken Content, System voice, Manage Voices. Find Turkish and download Yelda (Enhanced).</p>
       <p><b>iPhone:</b> Settings, Accessibility, Spoken Content, Voices, Turkish. Download Yelda (Enhanced).</p>
-      <p>Then reload this page and pick it above.</p>
     </details>
   </section>
 
@@ -842,6 +847,25 @@ function settingsView() {
   const off = sync.onStatus(drawSync);
   cleanup = off;
 
+  const voiceRow = (v) => {
+    const inUse = (settings().recordedVoice || 'emel') === v.id;
+    return `<li class="voice${inUse ? ' chosen' : ''}">
+      <button class="play-mini" data-act="tryvoice" data-v="${v.id}" aria-label="Play ${esc(v.name)}">${I.play}</button>
+      <div class="vinfo"><b>${esc(v.name)}</b><small>${esc(v.about)}</small></div>
+      ${v.full ? (inUse ? '<span class="tag on">In use</span>' : `<button class="btn small" data-act="usevoice" data-v="${v.id}">Use</button>`) : '<span class="tag">Sample</span>'}
+    </li>`;
+  };
+  const drawVoices = () => {
+    const device = { id: 'device', name: 'Device voice', full: true, about: 'Built into this phone or computer (Yelda). Reads anything, sounds more robotic.' };
+    $('#voices').innerHTML = `
+      <h3 class="vgroup">Native Turkish · whole course recorded</h3>
+      <ul class="voices">${VOICES.filter((v) => v.native).map(voiceRow).join('')}${voiceRow(device)}</ul>
+      <h3 class="vgroup">Multilingual · samples only</h3>
+      <p class="muted small">These speak Turkish as a second language. If you like one, ask Claude to record the whole course in it.</p>
+      <ul class="voices">${VOICES.filter((v) => !v.native).map(voiceRow).join('')}</ul>`;
+  };
+  drawVoices();
+
   $('#set-name').addEventListener('change', (e) => store.setSettings({ name: e.target.value.trim() || 'Giosuè' }));
   $('#set-spell').addEventListener('change', (e) => store.setSettings({ showSpelling: e.target.checked }));
   $('#set-voice')?.addEventListener('change', (e) => { store.setSettings({ voiceURI: e.target.value }); S.setVoice(e.target.value, settings().rate); });
@@ -859,6 +883,20 @@ function settingsView() {
   });
 
   local = {
+    sample(el) {
+      voiceUI.sample = +el.dataset.i;
+      $$('.samples .filter', view).forEach((b) => b.classList.toggle('on', b === el));
+    },
+    tryvoice: async (el) => {
+      el.classList.add('busy');
+      await S.playVoice(el.dataset.v, SAMPLES[voiceUI.sample]);
+      el.classList.remove('busy');
+    },
+    usevoice(el) {
+      store.setSettings({ recordedVoice: el.dataset.v });
+      S.setRecordedVoice(el.dataset.v);
+      drawVoices();
+    },
     signin: () => authSubmit(false),
     signup: () => authSubmit(true),
     async forgot() {
@@ -899,7 +937,7 @@ function render() {
   cleanup?.(); cleanup = null;
   S.stopListening();
   if (recorder) { recorder.stop(); recorder = null; }
-  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  S.stopSpeaking();
   current = route;
   document.body.classList.toggle('focus', route === 'lesson' || route === 'review');
   $$('.tabs a').forEach((a) => a.classList.toggle('on', a.dataset.tab === TAB_OF[route]));
@@ -923,7 +961,7 @@ function shell() {
 
 let redrawTimer = null;
 store.subscribe((kind) => {
-  if (kind === 'meta' || kind === 'all') S.setVoice(settings().voiceURI, settings().rate);
+  if (kind === 'meta' || kind === 'all') { S.setVoice(settings().voiceURI, settings().rate); S.setRecordedVoice(settings().recordedVoice); }
   if (!['today', 'path'].includes(current) && !(current === 'vocab' && kind !== 'meta')) return;
   clearTimeout(redrawTimer);
   redrawTimer = setTimeout(() => {
@@ -973,6 +1011,7 @@ window.addEventListener('speech-error', (e) => {
 });
 
 S.setVoice(settings().voiceURI, settings().rate);
+S.setRecordedVoice(settings().recordedVoice);
 seedKnown();
 shell();
 window.addEventListener('hashchange', render);

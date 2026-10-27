@@ -1,5 +1,67 @@
-// Listening (text to speech), checking (speech recognition) and recording.
+// Listening (recorded voices, then the device voice), checking (speech recognition) and recording.
 import { trLower, SOUNDS } from './pron.js';
+import { audioHash } from './voices.js';
+
+/* ---------- Recorded voices ---------- */
+
+const recorded = new Map(); // voice id -> Set of hashes it has
+let chosenVoice = 'emel';
+let player = null;
+
+export async function loadVoice(id) {
+  if (!id || id === 'device' || recorded.has(id)) return;
+  try {
+    const res = await fetch(`audio/${id}/index.json`);
+    recorded.set(id, new Set(await res.json()));
+  } catch { recorded.set(id, new Set()); }
+}
+export function setRecordedVoice(id) {
+  chosenVoice = id || 'emel';
+  loadVoice(chosenVoice).then(() => setTimeout(() => keepOffline(chosenVoice), 4000));
+}
+
+// Save the chosen voice's files on the device, a few at a time, so lessons work offline.
+async function keepOffline(voice) {
+  if (!('caches' in window) || !navigator.onLine || !recorded.get(voice)?.size) return;
+  try {
+    const cache = await caches.open(`konus-audio-${voice}`);
+    const have = new Set((await cache.keys()).map((r) => new URL(r.url).pathname.split('/').pop()));
+    const missing = [...recorded.get(voice)].filter((h) => !have.has(`${h}.mp3`));
+    for (let i = 0; i < missing.length && voice === chosenVoice; i += 6) {
+      await Promise.all(missing.slice(i, i + 6).map((h) => cache.add(`audio/${voice}/${h}.mp3`).catch(() => {})));
+    }
+  } catch { /* storage unavailable: audio still streams when online */ }
+}
+
+function playFile(voice, text, slow) {
+  const h = audioHash(text);
+  if (!recorded.get(voice)?.has(h)) return null;
+  return new Promise((resolve) => {
+    stopSpeaking();
+    const a = new Audio(`audio/${voice}/${h}.mp3`);
+    player = a;
+    a.preservesPitch = true;
+    a.playbackRate = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : 1) * (rate / 0.9)));
+    a.onended = () => resolve();
+    a.onerror = () => resolve();
+    a.play().catch((err) => {
+      if (err?.name === 'NotAllowedError') window.dispatchEvent(new CustomEvent('speech-error', { detail: 'not-allowed' }));
+      resolve();
+    });
+  });
+}
+
+// Play a phrase in a specific voice; used by the voice chooser.
+export async function playVoice(voice, text, { slow = false } = {}) {
+  if (voice === 'device') return deviceSpeak(text, { slow });
+  await loadVoice(voice);
+  return playFile(voice, text, slow) || deviceSpeak(text, { slow });
+}
+
+export function stopSpeaking() {
+  if (player) { player.pause(); player = null; }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
 
 /* ---------- Turkish voice ---------- */
 
@@ -56,7 +118,17 @@ export function unlockAudio() {
 
 let current = null;
 
+// Recorded voice when it has this phrase; the device voice for everything else.
 export function speak(text, { slow = false } = {}) {
+  if (chosenVoice !== 'device') {
+    const p = playFile(chosenVoice, text, slow);
+    if (p) return p;
+  }
+  return deviceSpeak(text, { slow });
+}
+
+function deviceSpeak(text, { slow = false } = {}) {
+  if (player) { player.pause(); player = null; }
   return new Promise((resolve) => {
     if (!canSpeak() || !text) return resolve();
     const go = () => {

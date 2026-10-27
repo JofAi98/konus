@@ -43,13 +43,28 @@ Every later `git push` updates the app. It picks up the new version the next tim
 
 The Firebase config is not a secret: it only identifies the project. The rules in `firestore.rules` are what keep your data private to your account.
 
+## Voices
+
+The course is recorded with Microsoft neural voices: Emel (native Turkish) for every phrase and word, and six multilingual voices for the sample sentences in Settings. Anything without a recording, like phrases you add yourself, uses the device's Turkish voice.
+
+After adding lessons, record the new phrases (existing files are kept):
+
+```bash
+pip install edge-tts
+node tools/audio-texts.mjs | python3 tools/make-audio.py emel
+```
+
+To record the whole course in a multilingual voice, use its id from `js/voices.js` (for example `ava`), then set `full: true` for it there.
+
 ## Files
 
 | File | What it does |
 |---|---|
 | `js/course.js` | All lessons. Add a unit here and push to publish it. |
 | `js/pron.js` | Syllables, stress and the sound line. Stress exceptions go in `STRESS`. |
-| `js/speech.js` | Turkish voice, speech checking, recording |
+| `js/speech.js` | Recorded and device voices, speech checking, recording |
+| `js/voices.js` | The voice list, sample sentences, audio file names |
+| `audio/` | Recorded mp3s per voice; `tools/` records them |
 | `js/srs.js` | Review scheduling (FSRS v4.5) |
 | `js/store.js` | Saves everything on the device |
 | `js/sync.js` | Syncs with Firebase when configured |
