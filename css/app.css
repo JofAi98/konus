@@ -4,6 +4,7 @@
   --cobalt: #1F4FA0; --cobalt-soft: #E8EEF8; --amber: #8F520A; --amber-soft: #FAEFD9;
   --good: #2F6B3A; --good-soft: #E9F2E9; --warn: #855700; --warn-soft: #FAF1D8; --bad: #9F2F2D; --bad-soft: #FBEAEA;
   --btn: #1D232A; --btn-ink: #FFFFFF;
+  --rk-f: #6B7178; --rk-e: #2F6B3A; --rk-d: #1F6C78; --rk-c: #1F4FA0; --rk-b: #5B3FA0; --rk-a: #8F520A; --rk-s: #9F2F2D;
   --f-display: 'Newsreader', 'Iowan Old Style', Georgia, serif;
   --f-ui: 'Geist', -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   --f-mono: 'Geist Mono', 'SF Mono', ui-monospace, Menlo, monospace;
@@ -16,6 +17,7 @@
     --cobalt: #93B4EE; --cobalt-soft: #16243A; --amber: #F0B661; --amber-soft: #33250F;
     --good: #8ACB95; --good-soft: #132A1A; --warn: #E6C46B; --warn-soft: #2E250E; --bad: #F09C98; --bad-soft: #331616;
     --btn: #E7EBF0; --btn-ink: #0E151E;
+    --rk-f: #8C98A6; --rk-e: #8ACB95; --rk-d: #7FC8D2; --rk-c: #93B4EE; --rk-b: #B9A3F0; --rk-a: #F0B661; --rk-s: #F09C98;
     color-scheme: dark;
   }
 }
@@ -289,6 +291,44 @@ input[type="range"] { width: 100%; accent-color: var(--cobalt); }
 .lu-list li { display: flex; flex-direction: column; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .lu-list span { font-size: 14px; color: var(--muted); }
 .lu-card .btn { align-self: flex-start; margin-top: 6px; }
+
+/* Hunter rank badge */
+.r-F { --rk: var(--rk-f); } .r-E { --rk: var(--rk-e); } .r-D { --rk: var(--rk-d); } .r-C { --rk: var(--rk-c); }
+.r-B { --rk: var(--rk-b); } .r-A { --rk: var(--rk-a); } .r-S { --rk: var(--rk-s); }
+.hbadge { position: relative; flex: none; display: inline-grid; place-items: center; width: 64px; height: 72px; color: var(--rk); }
+.hbadge svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hbadge path { fill: color-mix(in srgb, var(--rk) 14%, var(--surface)); stroke: var(--rk); stroke-width: 2.5; stroke-linejoin: round; }
+.hbadge.r-S path { stroke-width: 3.5; }
+.hl { position: relative; font: 500 2.1rem/1 var(--f-display); letter-spacing: -0.03em; margin-top: -4px; }
+.hl sup { font-size: 0.55em; vertical-align: 0.75em; margin-left: 1px; }
+.hbadge.sm { width: 30px; height: 34px; }
+.hbadge.sm .hl { font-size: 1rem; margin-top: -2px; }
+.hbadge.sm path { stroke-width: 3.5; }
+.hbadge.xl { width: 104px; height: 117px; }
+.hbadge.xl .hl { font-size: 3.4rem; }
+.lvl b[class^="r-"] { color: var(--rk); }
+.lv-text .eyebrow { color: var(--ink-2); }
+.next-rank { color: var(--ink-2); padding-top: 10px; border-top: 1px solid var(--line); }
+.tutorial { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tut-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tut-list a { display: flex; align-items: center; gap: 12px; padding: 7px 0; color: var(--ink); }
+.tut-list a small { margin-left: auto; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tut-list .lstate { width: 22px; height: 22px; }
+.tut-list a.done { color: var(--muted); }
+.tut-list a.done .lstate { border-color: var(--good); background: var(--good-soft); }
+.ranks-note { margin-left: auto; font: 500 12px var(--f-mono); color: var(--muted); letter-spacing: 0.04em; }
+.ladder { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 14px; }
+.ladder li { display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; padding: 6px; border-radius: var(--r-s); }
+.ladder li .hbadge { grid-row: span 2; }
+.ladder li b { font: 500 13px var(--f-mono); color: var(--ink); }
+.ladder li span { font-size: 12px; color: var(--muted); }
+.ladder li.on { background: var(--sunk); }
+.rankup { z-index: 41; }
+.rankup .lu-num { color: var(--rk); }
+.lu-card.center { align-items: center; text-align: center; }
+.lu-card.center .btn { align-self: center; }
+.rankup .hbadge { animation: rankin 700ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes rankin { from { opacity: 0; transform: scale(0.6) rotate(-8deg); } }
 
 /* Build drills */
 .pattern { border-collapse: collapse; width: 100%; max-width: 460px; }

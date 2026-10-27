@@ -41,7 +41,32 @@ export function rankOf(progress) {
   return r;
 }
 
-export const totalXP = (stats) => Object.values(stats.days || {}).reduce((sum, d) => sum + (d.xp || 0), 0);
+// Hunter ranks, F to S, laid over the European levels. F is the tutorial;
+// each European level has a plain rank and a "+" rank for its second half.
+export const TUTORIAL = ['u0l1', 'u0l2', 'u0l3', 'd1', 'dl1'];
+export const HUNTER = ['F', 'E', 'E+', 'D', 'D+', 'C', 'C+', 'B', 'B+', 'A', 'A+', 'S'];
+const LETTER = { A1: 'E', A2: 'D', B1: 'C', B2: 'B', C1: 'A', C2: 'S' };
+const PLUS_AT = { A1: 20, A2: 45, B1: 80, B2: 125, C1: 175 };
+export const LADDER = [
+  ['S', 'C2', 'Mastery'], ['A+', 'C1+', ''], ['A', 'C1', 'Advanced'], ['B+', 'B2+', ''], ['B', 'B2', 'Upper intermediate'],
+  ['C+', 'B1+', ''], ['C', 'B1', 'Intermediate'], ['D+', 'A2+', ''], ['D', 'A2', 'Elementary'], ['E+', 'A1+', ''], ['E', 'A1', 'Beginner'], ['F', '', 'Before A1'],
+];
+
+export function hunterRank({ level, rank, progress }) {
+  const tutorialDone = TUTORIAL.filter((id) => progress[id]).length;
+  if (rank.id === 'A1' && tutorialDone < TUTORIAL.length) {
+    return { id: 'F', letter: 'F', plus: false, cefr: '', tutorialDone, next: `Finish the tutorial to reach rank E: ${tutorialDone} of ${TUTORIAL.length} done` };
+  }
+  const letter = LETTER[rank.id];
+  const plusAt = PLUS_AT[rank.id];
+  const plus = !!plusAt && level >= plusAt;
+  const next = !plusAt ? 'The highest rank there is.'
+    : !plus ? `${letter}+ at level ${plusAt}`
+    : `${HUNTER[HUNTER.indexOf(letter + '+') + 1]}: pass the ${rank.id} exam${rank.examAt ? `, which opens at level ${rank.examAt}` : ''}`;
+  return { id: letter + (plus ? '+' : ''), letter, plus, cefr: rank.id + (plus ? '+' : ''), tutorialDone, next };
+}
+
+export const totalXP =(stats) => Object.values(stats.days || {}).reduce((sum, d) => sum + (d.xp || 0), 0);
 
 // Abilities that open with a level rather than a piece of content.
 export const FEATURES = [

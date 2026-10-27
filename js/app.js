@@ -5,7 +5,7 @@ import * as srs from './srs.js';
 import { store, cardId, saveRecording, getRecording, dayKey } from './store.js';
 import * as sync from './sync.js';
 import { VOICES, SAMPLES } from './voices.js';
-import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, xpForLevel, levelFor, rankOf, rankIndex, totalXP, isOpen, featureOpen, unlocksAt } from './levels.js';
+import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, xpForLevel, levelFor, rankOf, rankIndex, totalXP, isOpen, featureOpen, unlocksAt } from './levels.js';
 import { DRILLS, drillById } from './drills.js';
 import { DIALOGUES, dialogueById, WHO } from './dialogues.js';
 import { STORIES, storyById } from './stories.js';
@@ -124,11 +124,47 @@ function showMine(panel, blob) {
 
 const me = () => {
   const xp = totalXP(store.state.stats);
-  return { xp, level: levelFor(xp), rank: rankOf(store.state.progress), progress: store.state.progress };
+  const m = { xp, level: levelFor(xp), rank: rankOf(store.state.progress), progress: store.state.progress };
+  m.hunter = hunterRank(m);
+  return m;
 };
 const isDone = (id) => !!store.state.progress[id];
 const pathItem = (id) => PATH.find((p) => p.id === id);
-const nextUp = (m = me()) => PATH.find((p) => !isDone(p.id) && isOpen(p, m));
+// During the tutorial (rank F), its five steps come first.
+const nextUp = (m = me()) => (m.hunter.id === 'F' && PATH.find((p) => TUTORIAL.includes(p.id) && !isDone(p.id)))
+  || PATH.find((p) => !isDone(p.id) && isOpen(p, m));
+
+const badgeHTML = (h, size = '') => `<span class="hbadge r-${h.letter}${size ? ' ' + size : ''}" role="img" aria-label="Rank ${h.id}">
+  <svg viewBox="0 0 64 72" aria-hidden="true"><path d="M32 3L59 14v22c0 16-11.5 28-27 33C16.5 64 5 52 5 36V14z"/></svg>
+  <span class="hl">${h.letter}${h.plus ? '<sup>+</sup>' : ''}</span>
+</span>`;
+
+const RANK_LINES = {
+  E: 'Tutorial complete. You\'re on the A1 course now.',
+  'E+': 'The second half of A1. The A1 exam opens at level 30.',
+  D: 'You passed A1. Everything in A2 is open.',
+  'D+': 'The second half of A2.',
+  C: 'You passed A2. Welcome to B1.',
+};
+
+function rankUp(h) {
+  const el = document.createElement('div');
+  el.className = 'levelup rankup';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'ru-title');
+  el.innerHTML = `<div class="lu-card center r-${h.letter}">
+    <p class="eyebrow">Rank up</p>
+    ${badgeHTML(h, 'xl')}
+    <h2 id="ru-title" class="lu-num">Rank ${h.id}</h2>
+    <p class="muted">${h.cefr ? `European level ${h.cefr}. ` : ''}${esc(RANK_LINES[h.id] || '')}</p>
+    <p class="small">Next: ${esc(h.next)}</p>
+    <button class="btn primary">Continue</button>
+  </div>`;
+  el.querySelector('button').addEventListener('click', () => el.remove());
+  document.body.append(el);
+  el.querySelector('button').focus();
+}
 const xpToGo = (level, m = me()) => Math.max(0, xpForLevel(level) - m.xp);
 
 // The next level (within A1) that opens something, and what it opens.
@@ -165,7 +201,7 @@ function levelUp(from, to) {
   const opened = [];
   for (let L = from + 1; L <= to; L++) opened.push(...unlocksAt(L));
   const nx = nextUnlock();
-  document.querySelector('.levelup')?.remove();
+  document.querySelector('.levelup:not(.rankup)')?.remove();
   const el = document.createElement('div');
   el.className = 'levelup';
   el.setAttribute('role', 'dialog');
@@ -183,12 +219,16 @@ function levelUp(from, to) {
   el.querySelector('button').focus();
 }
 
+let shownRank = null;
 function drawLevelChip() {
   const el = $('#lvl');
   if (!el) return;
   const m = me();
-  el.innerHTML = `<b>${m.rank.id}</b> Lv ${m.level}`;
-  el.setAttribute('aria-label', `Rank ${m.rank.id}, level ${m.level}`);
+  const h = m.hunter;
+  el.innerHTML = `<b class="r-${h.letter}">${h.id}</b> Lv ${m.level}`;
+  el.setAttribute('aria-label', `Rank ${h.id}${h.cefr ? ` (${h.cefr})` : ''}, level ${m.level}`);
+  if (shownRank && HUNTER.indexOf(h.id) > HUNTER.indexOf(shownRank)) rankUp(h);
+  shownRank = h.id;
 }
 
 function levelCardHTML(m = me()) {
@@ -197,10 +237,15 @@ function levelCardHTML(m = me()) {
   const pct = Math.round(((m.xp - lo) / (hi - lo)) * 100);
   const today = store.state.stats.days[dayKey()]?.xp || 0;
   const nx = nextUnlock(m);
+  const h = m.hunter;
   return `<section class="levelcard">
     <div class="lv-head">
-      <span class="rank-badge">${m.rank.id}</span>
-      <div class="lv-text"><h2 class="lv-num">Level ${m.level}</h2><p class="muted small">${esc(m.rank.name)} · ${m.xp.toLocaleString('en-GB')} XP</p></div>
+      ${badgeHTML(h)}
+      <div class="lv-text">
+        <p class="eyebrow">Rank ${h.id} · ${h.cefr ? `${h.cefr} ${esc(m.rank.name)}` : 'Tutorial'}</p>
+        <h2 class="lv-num">Level ${m.level}</h2>
+        <p class="muted small">${m.xp.toLocaleString('en-GB')} XP</p>
+      </div>
     </div>
     <div class="meter" role="progressbar" aria-label="Progress to level ${m.level + 1}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
     <p class="muted small">${hi - m.xp} XP to level ${m.level + 1}</p>
@@ -210,6 +255,10 @@ function levelCardHTML(m = me()) {
       <span class="goal-num">${today} / ${DAILY_GOAL} XP</span>
     </div>
     ${nx ? `<p class="small next-unlock">Level ${nx.level} opens ${esc(nx.items.map((i) => i.title).join(', '))}.</p>` : ''}
+    ${h.id === 'F' ? `<div class="tutorial">
+      <p class="eyebrow">Tutorial · ${h.tutorialDone} of ${TUTORIAL.length} · finish it to reach rank E</p>
+      <ol class="tut-list">${TUTORIAL.map((id) => { const p = pathItem(id); return `<li><a class="${isDone(id) ? 'done' : ''}" href="${p.href}"><span class="lstate">${isDone(id) ? I.check : ''}</span><span>${esc(p.title)}</span><small>${KIND[p.kind]}</small></a></li>`; }).join('')}</ol>
+    </div>` : `<p class="small next-rank">Next rank: ${esc(h.next)}</p>`}
   </section>`;
 }
 
@@ -461,12 +510,14 @@ function pathView() {
     <p><b>XP.</b> A lesson or Build drill earns ${XP.lesson}, a dialogue ${XP.dialogue}, a story ${XP.story}, each review ${XP.review}, and each sentence you say out loud ${XP.spoken} (${XP.spoken + XP.clear} when it comes through clearly). Your first practice each day adds ${XP.daily}. Doing something again earns ${XP.again}.</p>
     <p><b>Levels.</b> Each level needs a little more XP than the last. About ${DAILY_GOAL} XP a day, 15 to 20 minutes, reaches level 20 in a month.</p>
     <p><b>Ranks.</b> Ranks follow the European levels: A1, A2, B1, B2, C1, C2. In A1, levels open lessons, drills, dialogues and stories step by step. The A1 exam opens at level 30: 20 questions of listening, speaking and conversation. Score 80% to reach A2, which opens all A2 grammar, vocabulary, dialogues and stories at once. Each rank after that ends with its own exam.</p>
+    <p><b>Hunter ranks.</b> On top of the European levels you carry a rank from F to S. F is the tutorial: the three Sounds lessons, the first Build drill and the first dialogue. Finish them to reach E. Each European level has a plain rank and a + rank for its second half.</p>
+    <ul class="ladder">${LADDER.map(([id, cefr, name]) => `<li class="${id === m.hunter.id ? 'on' : ''}">${badgeHTML({ id, letter: id[0], plus: id.endsWith('+') }, 'sm')}<b>${cefr || 'Tutorial'}</b><span>${esc(name)}</span></li>`).join('')}</ul>
     <p><b>What A1 means.</b> You can introduce yourself, ask and answer simple questions, and get through everyday moments like a meal, a café or a phone call, if people speak slowly.</p>
   </details>
 
   <div class="filters" role="tablist">${[['all', 'All'], ['lesson', 'Lessons'], ['drill', 'Build'], ['dialogue', 'Talk'], ['story', 'Stories']].map(([k, t]) => `<button class="filter${pathUI.kind === k ? ' on' : ''}" data-act="pfilter" data-k="${k}" role="tab" aria-selected="${pathUI.kind === k}">${t}</button>`).join('')}</div>
 
-  <h2 class="rank-title"><span class="rank-badge small">A1</span>Beginner <span lang="tr" class="muted">Başlangıç</span></h2>
+  <h2 class="rank-title"><span class="rank-badge small">A1</span>Beginner <span lang="tr" class="muted">Başlangıç</span><span class="ranks-note">Ranks F, E, E+</span></h2>
   ${levels.map((L) => {
     const items = groups.get(L);
     const fs = feats.filter((f) => f.level === L);
@@ -477,7 +528,7 @@ function pathView() {
     </section>`;
   }).join('')}
 
-  <h2 class="rank-title${passedA1 ? '' : ' locked'}"><span class="rank-badge small">A2</span>Elementary <span lang="tr" class="muted">Temel</span></h2>
+  <h2 class="rank-title${passedA1 ? '' : ' locked'}"><span class="rank-badge small">A2</span>Elementary <span lang="tr" class="muted">Temel</span><span class="ranks-note">Ranks D, D+</span></h2>
   <p class="muted small">${passedA1 ? 'Open. These arrive in app updates as they are written.' : 'Pass the A1 exam to open all of this at once.'}</p>
   <ol class="lessons">${NEXT_RANK.A2.filter((p) => pathUI.kind === 'all' || p.kind === pathUI.kind).map((p) => `<li><div class="lrow locked"${passedA1 ? '' : ' data-act="locked" data-rank="A2" role="button" tabindex="0"'}>
     <span class="lstate">${passedA1 ? '' : I.lock}</span><span class="ltext"><b>${esc(p.title)}</b><small>${esc(p.sub)}</small></span><span class="tag k-${p.kind}">${passedA1 ? 'Soon' : KIND[p.kind]}</span>
