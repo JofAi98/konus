@@ -2,7 +2,8 @@
 
 Learn to speak Turkish from zero. Speaking first: listen, echo, understand without text, then say it from memory. Built for an Italian speaker, in English.
 
-- 11 units, 25 lessons, 167 phrases, 208 words
+- 12 units, 29 lessons, 12 Build drills (grammar you say out loud), 12 dialogues you play a part in, 6 listening stories
+- Levels and ranks: practice earns XP, levels open content step by step, rank exams follow the European levels (A1 to C2)
 - A sound line under every phrase (te-shek-**KÜR** e-**DE**-rim), computed from the spelling
 - Speech checking with the browser's Turkish recognition, with sound-level hints
 - Record yourself and play it right after the native voice
@@ -56,11 +57,21 @@ node tools/audio-texts.mjs | python3 tools/make-audio.py emel
 
 To record the whole course in a multilingual voice, use its id from `js/voices.js` (for example `ava`), then set `full: true` for it there.
 
+## Levels and ranks
+
+Practice earns XP (a lesson or drill 30, a dialogue 25, a story 20, each review 2, each sentence said out loud 1 or 2, plus 10 for the first practice of the day). Level *L* needs `36 × (L − 1)^1.5` XP in total, so about 100 XP a day reaches level 20 in a month.
+
+Inside A1, each item on the path has a level that opens it; stories open at 10, no-hints role-play at 15, the practice exam at 20, native speed at 25. The A1 exam opens at level 30 (20 questions, pass at 80%, one try a day). Passing stores `rank:A2` in progress, which opens everything marked A2. The schedule lives in `js/levels.js`; each lesson, drill, dialogue and story sets its own `level`.
+
 ## Files
 
 | File | What it does |
 |---|---|
 | `js/course.js` | All lessons. Add a unit here and push to publish it. |
+| `js/drills.js` | Build drills: a grammar pattern and sentences to build from English |
+| `js/dialogues.js` | Talk: short scenes, your lines marked `you` |
+| `js/stories.js` | Listening stories with questions |
+| `js/levels.js` | XP, levels, ranks, the path and what each level opens |
 | `js/pron.js` | Syllables, stress and the sound line. Stress exceptions go in `STRESS`. |
 | `js/speech.js` | Recorded and device voices, speech checking, recording |
 | `js/voices.js` | The voice list, sample sentences, audio file names |

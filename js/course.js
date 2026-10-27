@@ -1,8 +1,9 @@
 // The course. Each item: p(turkish, english, words, note).
+// level: the level that opens a unit (or a single lesson, when the lesson sets its own).
 // words: "turkish=meaning; turkish=meaning". {name} becomes your name.
 import { clean } from './pron.js';
 
-const p = (tr, en, w = '', note = '') => ({
+export const p = (tr, en, w = '', note = '') => ({
   tr, en, note,
   words: w ? w.split(';').map((s) => s.trim()).filter(Boolean).map((s) => {
     const i = s.indexOf('=');
@@ -12,7 +13,7 @@ const p = (tr, en, w = '', note = '') => ({
 
 export const UNITS = [
   {
-    id: 'u0', title: 'Sounds', blurb: 'Turkish is spelled exactly as it sounds. Most letters already sound like Italian. These three lessons cover the rest.',
+    id: 'u0', level: 1, title: 'Sounds', blurb: 'Turkish is spelled exactly as it sounds. Most letters already sound like Italian. These three lessons cover the rest.',
     lessons: [
       { id: 'u0l1', title: 'Ç, C and Ş', goal: 'Italian ci, gi and sci, spelled differently', items: [
         p('çay', 'tea', '', 'ç is the "ci" of "ciao".'),
@@ -44,7 +45,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u1', title: 'Hello', blurb: 'The first things you will say to her, and to everyone she knows.',
+    id: 'u1', level: 1, title: 'Hello', blurb: 'The first things you will say to her, and to everyone she knows.',
     lessons: [
       { id: 'u1l1', title: 'Hello, how are you?', goal: 'Start any conversation', items: [
         p('Merhaba!', 'Hello!', 'merhaba=hello', 'Works any time, with anyone.'),
@@ -76,7 +77,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u2', title: 'About me', blurb: 'Your name, where you are from, and how to ask for help when you get lost.',
+    id: 'u2', level: 2, title: 'About me', blurb: 'Your name, where you are from, and how to ask for help when you get lost.',
     lessons: [
       { id: 'u2l1', title: 'My name is...', goal: 'Introduce yourself', items: [
         p('Benim adım {name}.', 'My name is {name}.', 'benim=my; adım=my name; ad=name'),
@@ -106,7 +107,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u3', title: 'At her family\'s table', blurb: 'Meeting her parents, eating together, and the small phrases that make a Turkish mother happy.',
+    id: 'u3', level: 3, title: 'At her family\'s table', blurb: 'Meeting her parents, eating together, and the small phrases that make a Turkish mother happy.',
     lessons: [
       { id: 'u3l1', title: 'Meeting her family', goal: 'Arrive and say the right thing', items: [
         p('Hoş geldiniz!', 'Welcome!', 'hoş=nice; geldiniz=you came', 'What the hosts say when you arrive.'),
@@ -136,7 +137,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u4', title: 'Love', blurb: 'The words for her.',
+    id: 'u4', level: 4, title: 'Love', blurb: 'The words for her.',
     lessons: [
       { id: 'u4l1', title: 'Sweet words', goal: 'Say what you feel', items: [
         p('Seni seviyorum.', 'I love you.', 'seni=you (as object)'),
@@ -159,7 +160,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u5', title: 'Wants and needs', blurb: 'Hungry, tired, thirsty, lost: say it.',
+    id: 'u5', level: 6, title: 'Wants and needs', blurb: 'Hungry, tired, thirsty, lost: say it.',
     lessons: [
       { id: 'u5l1', title: 'I want, I need', goal: 'Ask for what you need', items: [
         p('Çay istiyorum.', 'I want tea.', 'istiyorum=I want'),
@@ -183,7 +184,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u6', title: 'Questions', blurb: 'Who, what, where, when, why, how.',
+    id: 'u6', level: 8, title: 'Questions', blurb: 'Who, what, where, when, why, how.',
     lessons: [
       { id: 'u6l1', title: 'Question words', goal: 'The seven words that open any question', items: [
         p('Ne?', 'What?'),
@@ -205,7 +206,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u7', title: 'Numbers', blurb: 'Counting, prices and the time.',
+    id: 'u7', level: 10, title: 'Numbers', blurb: 'Counting, prices and the time.',
     lessons: [
       { id: 'u7l1', title: 'One to five', goal: 'Count to five', items: [
         p('bir', 'one'), p('iki', 'two'), p('üç', 'three'), p('dört', 'four'), p('beş', 'five'),
@@ -219,10 +220,20 @@ export const UNITS = [
         p('yirmi', 'twenty'), p('otuz', 'thirty'), p('elli', 'fifty'), p('yüz', 'a hundred'), p('bin', 'a thousand'),
         p('Yüz lira.', 'A hundred lira.', 'lira=lira (Turkish money)'),
       ] },
+      { id: 'u7l4', title: 'Today, later, the weather', goal: 'Time words and small talk about the weather', items: [
+        p('Bugün çok yorgunum.', 'I\'m very tired today.', 'bugün=today'),
+        p('Yarın ne yapıyorsun?', 'What are you doing tomorrow?', 'yarın=tomorrow'),
+        p('Şimdi değil, sonra.', 'Not now, later.', 'şimdi=now; sonra=later, then'),
+        p('Sabah kahve, akşam çay.', 'Coffee in the morning, tea in the evening.', 'sabah=morning; kahve=coffee'),
+        p('Hava çok güzel.', 'The weather is lovely.', 'hava=weather, air', 'Turks talk about the weather as much as Italians do.'),
+        p('Hava çok sıcak.', 'It\'s very hot.', 'sıcak=hot'),
+        p('Hava soğuk.', 'It\'s cold.', 'soğuk=cold'),
+        p('Her gün Türkçe çalışıyorum.', 'I study Turkish every day.', 'her=every; gün=day; çalışıyorum=I work, I study'),
+      ] },
     ],
   },
   {
-    id: 'u8', title: 'Out and about', blurb: 'Cafés, shops and finding your way.',
+    id: 'u8', level: 12, title: 'Out and about', blurb: 'Cafés, shops and finding your way.',
     lessons: [
       { id: 'u8l1', title: 'Café and shops', goal: 'Order, ask the price, pay', items: [
         p('Bir çay, lütfen.', 'A tea, please.'),
@@ -244,7 +255,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u9', title: 'Yesterday', blurb: 'Talk about what already happened. The past ends in -dı, -di, -du or -dü.',
+    id: 'u9', level: 14, title: 'Yesterday', blurb: 'Talk about what already happened. The past ends in -dı, -di, -du or -dü.',
     lessons: [
       { id: 'u9l1', title: 'What did you do?', goal: 'Tell her about your day', items: [
         p('Dün ne yaptın?', 'What did you do yesterday?', 'dün=yesterday; yaptın=you did'),
@@ -258,7 +269,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u10', title: 'Plans', blurb: 'Tomorrow, tonight and the weekend.',
+    id: 'u10', level: 17, title: 'Plans', blurb: 'Tomorrow, tonight and the weekend.',
     lessons: [
       { id: 'u10l1', title: 'What shall we do?', goal: 'Make plans together', items: [
         p('Yarın ne yapacaksın?', 'What will you do tomorrow?', 'yarın=tomorrow; yapacaksın=you will do'),
@@ -271,9 +282,47 @@ export const UNITS = [
       ] },
     ],
   },
+  {
+    id: 'u11', level: 5, title: 'Sound natural', blurb: 'The little words Turks fill every sentence with, and the set phrases for every moment of life.',
+    lessons: [
+      { id: 'u11l1', level: 5, title: 'Thinking out loud', goal: 'Fill the pauses like a Turk', items: [
+        p('Yani...', 'I mean... / So...', 'yani=I mean, that is', 'The most common filler. Use it while you think, or to explain something again.'),
+        p('Şey...', 'Um... / The thing...', 'şey=thing', 'For when the word won\'t come. It means "thing", like Italian "coso".'),
+        p('İşte...', 'Well... / There you go.', 'işte=here it is, well', 'Rounds off a thought: "İşte böyle", that\'s how it is.'),
+        p('Hani...', 'You know...', 'hani=you know, remember'),
+        p('Neyse.', 'Anyway.', 'neyse=anyway'),
+        p('Bir saniye...', 'One second...', 'saniye=second'),
+        p('Nasıl desem...', 'How should I put it...', 'desem=should I say'),
+        p('Of ya!', 'Ugh!', 'of=ugh (a sigh); ya=oh, really', 'Ya softens or stresses whatever comes before it: "Hadi ya", "Tamam ya".'),
+      ] },
+      { id: 'u11l2', level: 7, title: 'Reactions', goal: 'Answer with feeling', items: [
+        p('Aynen!', 'Exactly!', 'aynen=exactly'),
+        p('Valla mı?', 'Really? Honestly?', 'valla=I swear, honestly'),
+        p('Hadi ya!', 'No way! / Come on!', 'hadi=come on'),
+        p('Yok artık!', 'You\'re kidding!', 'artık=any more'),
+        p('Tabii ki.', 'Of course.', 'tabii=of course'),
+        p('Harika!', 'Great!', 'harika=wonderful'),
+        p('Eyvah!', 'Oh no!', 'eyvah=oh no'),
+        p('Aman!', 'Oh dear! / Careful!', 'aman=oh dear, mercy'),
+        p('Boş ver.', 'Never mind. / Forget it.', 'boş=empty; ver=give'),
+      ] },
+      { id: 'u11l3', level: 9, title: 'Words for every moment', goal: 'The set phrases Turks expect', items: [
+        p('Geçmiş olsun.', 'Get well soon. / Sorry that happened.', 'geçmiş=past; olsun=may it be', 'Literally "may it be in the past". For illness, a bad day, any bad luck.'),
+        p('Çok yaşa!', 'Bless you!', 'yaşa=live', 'After a sneeze. The answer is "Sen de gör!"'),
+        p('Sen de gör!', 'You too! (the answer to Çok yaşa)', 'gör=see', 'Literally "may you see it too": may you live long too.'),
+        p('Hayırlı olsun!', 'Congratulations!', 'hayırlı=lucky, good', 'For a new job, home or car.'),
+        p('İyi ki doğdun!', 'Happy birthday!', 'doğdun=you were born', 'Literally "good that you were born".'),
+        p('Başın sağ olsun.', 'I\'m sorry for your loss.', 'baş=head', 'Said after a death.'),
+        p('Gözün aydın!', 'What great news for you!', 'göz=eye; aydın=bright', 'When someone\'s loved one arrives or they get good news.'),
+        p('Maşallah!', 'How wonderful!', 'maşallah=wonderful (wards off the evil eye)', 'Said when praising a child, a home or someone\'s looks. It protects against the evil eye.'),
+        p('İnşallah.', 'Hopefully.', 'inşallah=hopefully, God willing', 'Everyone uses it, religious or not, for any hope about the future.'),
+        p('Kusura bakma.', 'Sorry. / Don\'t mind it.', 'kusur=fault; bakma=don\'t look', 'A soft sorry for small things. Polite: Kusura bakmayın.'),
+      ] },
+    ],
+  },
 ];
 
-export const LESSONS = UNITS.flatMap((u) => u.lessons.map((l) => ({ ...l, unit: u })));
+export const LESSONS = UNITS.flatMap((u) => u.lessons.map((l) => ({ ...l, level: l.level ?? u.level, rank: 'A1', unit: u })));
 export const lessonById = (id) => LESSONS.find((l) => l.id === id);
 
 // Every word the course teaches, with its meaning, first meaning wins.

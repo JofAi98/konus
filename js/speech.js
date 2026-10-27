@@ -33,7 +33,7 @@ async function keepOffline(voice) {
   } catch { /* storage unavailable: audio still streams when online */ }
 }
 
-function playFile(voice, text, slow) {
+function playFile(voice, text, slow, fast = false) {
   const h = audioHash(text);
   if (!recorded.get(voice)?.has(h)) return null;
   return new Promise((resolve) => {
@@ -41,7 +41,7 @@ function playFile(voice, text, slow) {
     const a = new Audio(`audio/${voice}/${h}.mp3`);
     player = a;
     a.preservesPitch = true;
-    a.playbackRate = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : 1) * (rate / 0.9)));
+    a.playbackRate = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : fast ? 1.2 : 1) * (rate / 0.9)));
     a.onended = () => resolve();
     a.onerror = () => resolve();
     a.play().catch((err) => {
@@ -119,15 +119,15 @@ export function unlockAudio() {
 let current = null;
 
 // Recorded voice when it has this phrase; the device voice for everything else.
-export function speak(text, { slow = false } = {}) {
+export function speak(text, { slow = false, fast = false } = {}) {
   if (chosenVoice !== 'device') {
-    const p = playFile(chosenVoice, text, slow);
+    const p = playFile(chosenVoice, text, slow, fast);
     if (p) return p;
   }
-  return deviceSpeak(text, { slow });
+  return deviceSpeak(text, { slow, fast });
 }
 
-function deviceSpeak(text, { slow = false } = {}) {
+function deviceSpeak(text, { slow = false, fast = false } = {}) {
   if (player) { player.pause(); player = null; }
   return new Promise((resolve) => {
     if (!canSpeak() || !text) return resolve();
@@ -137,7 +137,7 @@ function deviceSpeak(text, { slow = false } = {}) {
       u.lang = 'tr-TR';
       const v = pickVoice();
       if (v) u.voice = v;
-      u.rate = slow ? Math.max(0.45, rate * 0.62) : rate;
+      u.rate = slow ? Math.max(0.45, rate * 0.62) : fast ? rate * 1.2 : rate;
       u.onend = () => { if (current === u) current = null; resolve(); };
       u.onerror = (e) => {
         if (current === u) current = null;

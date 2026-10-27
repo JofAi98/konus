@@ -3,6 +3,9 @@
 import { LESSONS, COURSE_WORDS } from '../js/course.js';
 import { SOUNDS, tokens } from '../js/pron.js';
 import { SAMPLES, audioHash } from '../js/voices.js';
+import { DRILLS } from '../js/drills.js';
+import { DIALOGUES } from '../js/dialogues.js';
+import { STORIES } from '../js/stories.js';
 
 const NAME = 'Giosuè';
 const fill = (s) => s.replaceAll('{name}', NAME);
@@ -21,6 +24,18 @@ if (process.argv[2] === 'samples') {
     }
   }
   COURSE_WORDS.forEach((w) => add(w.tr));
+  // Build drills, dialogues and stories: every sentence, every word in it, and every glossed word.
+  const items = [
+    ...DRILLS.flatMap((d) => [...d.items, ...d.table.map(([tr]) => ({ tr, words: [] }))]),
+    ...DIALOGUES.flatMap((d) => d.lines),
+    ...STORIES.flatMap((st) => st.lines),
+  ];
+  for (const it of items) {
+    add(it.tr);
+    tokens(fill(it.tr)).forEach(add);
+    it.words.forEach((w) => add(w.tr));
+  }
+  ['Aferin', 'Harika'].forEach(add);
   SOUNDS.forEach((s) => add(s.ex));
   ['Günaydın', 'Merhaba', 'İyi akşamlar', 'Aferin', 'Merhaba, nasılsın?', 'Teşekkür ederim', 'güzel', 'teşekkürler', 'akşam', 'akşamlar', 'seviyorum', 'anlamıyorum', 'Hazır mısın', 'Merhaba!', 'Seni seviyorum.'].forEach(add);
 }

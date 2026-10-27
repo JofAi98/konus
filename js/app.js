@@ -2,9 +2,13 @@ import { UNITS, LESSONS, lessonById, COURSE_WORDS } from './course.js';
 import * as P from './pron.js';
 import * as S from './speech.js';
 import * as srs from './srs.js';
-import { store, cardId, saveRecording, getRecording } from './store.js';
+import { store, cardId, saveRecording, getRecording, dayKey } from './store.js';
 import * as sync from './sync.js';
 import { VOICES, SAMPLES } from './voices.js';
+import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, xpForLevel, levelFor, rankOf, rankIndex, totalXP, isOpen, featureOpen, unlocksAt } from './levels.js';
+import { DRILLS, drillById } from './drills.js';
+import { DIALOGUES, dialogueById, WHO } from './dialogues.js';
+import { STORIES, storyById } from './stories.js';
 
 /* ---------- helpers ---------- */
 
@@ -39,12 +43,21 @@ const I = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   ear: svg('<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/>'),
   copy: svg('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>'),
+  lock: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>'),
+  star: svg('<path d="M12 3.8l2.5 5.2 5.6.7-4.1 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4.1-3.9 5.6-.7z"/>'),
 };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Meaning of any word the app knows, from the course and your vocab.
+const EXTRA_WORDS = [
+  ...DRILLS.flatMap((d) => d.items.flatMap((it) => it.words)),
+  ...DIALOGUES.flatMap((d) => d.lines.flatMap((l) => l.words)),
+  ...STORIES.flatMap((st) => st.lines.flatMap((l) => l.words)),
+];
 function glossMap() {
   const m = new Map();
   for (const w of COURSE_WORDS) m.set(P.clean(w.tr), w.en);
+  for (const w of EXTRA_WORDS) if (!m.has(P.clean(w.tr))) m.set(P.clean(w.tr), w.en);
   for (const c of store.cards()) if (c.kind === 'word' && !m.has(P.clean(c.tr))) m.set(P.clean(c.tr), c.en);
   return m;
 }
@@ -107,6 +120,130 @@ function showMine(panel, blob) {
   S.drawWave(blob, $('.wave', mine));
 }
 
+/* ---------- Levels and XP ---------- */
+
+const me = () => {
+  const xp = totalXP(store.state.stats);
+  return { xp, level: levelFor(xp), rank: rankOf(store.state.progress), progress: store.state.progress };
+};
+const isDone = (id) => !!store.state.progress[id];
+const pathItem = (id) => PATH.find((p) => p.id === id);
+const nextUp = (m = me()) => PATH.find((p) => !isDone(p.id) && isOpen(p, m));
+const xpToGo = (level, m = me()) => Math.max(0, xpForLevel(level) - m.xp);
+
+// The next level (within A1) that opens something, and what it opens.
+function nextUnlock(m = me()) {
+  if (m.rank.id !== 'A1') return null;
+  for (let L = m.level + 1; L <= 30; L++) {
+    const items = unlocksAt(L);
+    if (items.length) return { level: L, items };
+  }
+  return null;
+}
+
+function award(n) {
+  if (!n) return;
+  const before = me().level;
+  if (!store.state.stats.days[dayKey()]?.xp) n += XP.daily; // first practice of the day
+  store.log('xp', n);
+  xpPop(n);
+  const after = me().level;
+  if (after > before) levelUp(before, after);
+  drawLevelChip();
+}
+
+function xpPop(n) {
+  const el = document.createElement('div');
+  el.className = 'xp-pop';
+  el.setAttribute('aria-hidden', 'true');
+  el.textContent = `+${n} XP`;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 1500);
+}
+
+function levelUp(from, to) {
+  const opened = [];
+  for (let L = from + 1; L <= to; L++) opened.push(...unlocksAt(L));
+  const nx = nextUnlock();
+  document.querySelector('.levelup')?.remove();
+  const el = document.createElement('div');
+  el.className = 'levelup';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'lu-title');
+  el.innerHTML = `<div class="lu-card">
+    <p class="eyebrow">Level up · <span lang="tr">Tebrikler!</span></p>
+    <h2 id="lu-title" class="lu-num">Level ${to}</h2>
+    ${opened.length ? `<p class="muted small">Now open:</p><ul class="lu-list">${opened.map((o) => `<li><b>${esc(o.title)}</b><span>${esc(o.sub)}</span></li>`).join('')}</ul>`
+    : `<p class="muted">${nx ? `Level ${nx.level} opens ${esc(nx.items.map((i) => i.title).join(', '))}.` : 'Keep going: the A1 exam opens at level 30.'}</p>`}
+    <button class="btn primary">Continue</button>
+  </div>`;
+  el.querySelector('button').addEventListener('click', () => el.remove());
+  document.body.append(el);
+  el.querySelector('button').focus();
+}
+
+function drawLevelChip() {
+  const el = $('#lvl');
+  if (!el) return;
+  const m = me();
+  el.innerHTML = `<b>${m.rank.id}</b> Lv ${m.level}`;
+  el.setAttribute('aria-label', `Rank ${m.rank.id}, level ${m.level}`);
+}
+
+function levelCardHTML(m = me()) {
+  const lo = xpForLevel(m.level);
+  const hi = xpForLevel(m.level + 1);
+  const pct = Math.round(((m.xp - lo) / (hi - lo)) * 100);
+  const today = store.state.stats.days[dayKey()]?.xp || 0;
+  const nx = nextUnlock(m);
+  return `<section class="levelcard">
+    <div class="lv-head">
+      <span class="rank-badge">${m.rank.id}</span>
+      <div class="lv-text"><h2 class="lv-num">Level ${m.level}</h2><p class="muted small">${esc(m.rank.name)} · ${m.xp.toLocaleString('en-GB')} XP</p></div>
+    </div>
+    <div class="meter" role="progressbar" aria-label="Progress to level ${m.level + 1}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
+    <p class="muted small">${hi - m.xp} XP to level ${m.level + 1}</p>
+    <div class="goal">
+      <span class="eyebrow">Today</span>
+      <div class="meter amber" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="${DAILY_GOAL}" aria-valuenow="${Math.min(today, DAILY_GOAL)}"><span style="width:${Math.min(100, (today / DAILY_GOAL) * 100)}%"></span></div>
+      <span class="goal-num">${today} / ${DAILY_GOAL} XP</span>
+    </div>
+    ${nx ? `<p class="small next-unlock">Level ${nx.level} opens ${esc(nx.items.map((i) => i.title).join(', '))}.</p>` : ''}
+  </section>`;
+}
+
+function lockedView(item) {
+  const m = me();
+  const above = rankIndex(item.rank || 'A1') > rankIndex(m.rank.id);
+  view.innerHTML = `<button class="backlink" data-act="back">${I.back}<span>Back</span></button>
+  <section class="done">
+    <p class="eyebrow">${esc(KIND[item.kind] || 'Exam')} · Locked</p>
+    <h1>${esc(item.title)}</h1>
+    <p class="lede">${above ? `Opens when you pass the ${m.rank.id} exam.` : `Opens at level ${item.level}. You're level ${m.level}, with ${xpToGo(item.level, m)} XP to go.`} Lessons, reviews, drills and every sentence you say out loud earn XP.</p>
+    <div class="row"><a class="btn primary" href="#today">Back to Today</a><a class="btn" href="#path">Open the path</a></div>
+  </section>`;
+  local = {};
+}
+
+// Words from a finished drill, dialogue or story go to your vocab.
+function saveWords(words, src) {
+  const now = Date.now();
+  let n = 0;
+  for (const w of words) {
+    const id = cardId('word', w.tr);
+    if (store.card(id)) continue;
+    store.putCard(srs.grade({ id, kind: 'word', tr: w.tr, en: w.en, src, added: now }, 3, now));
+    n++;
+  }
+  return n;
+}
+
+const nextButtonHTML = () => {
+  const nx = nextUp();
+  return nx ? `<a class="btn primary" href="${nx.href}">${I.arrow}<span>Next: ${esc(nx.title)}</span></a>` : '';
+};
+
 /* ---------- speaking: check, record, compare ---------- */
 
 let listeningBtn = null;
@@ -144,6 +281,12 @@ const globalActions = {
     el.classList.remove('busy');
   },
   back: () => history.back(),
+  locked: (el) => {
+    const m = me();
+    if (el.dataset.rank) { toast(`Opens when you pass the ${m.rank.id} exam. The exam opens at level 30.`); return; }
+    const L = +el.dataset.level;
+    toast(`Opens at level ${L}. You're level ${m.level}, with ${xpToGo(L, m)} XP to go.`);
+  },
   async check(el) {
     const panel = el.closest('.speak');
     const box = $('.result', panel);
@@ -163,6 +306,7 @@ const globalActions = {
         const res = S.compare(fill(panel.dataset.target), alts, { skip: [settings().name] });
         box.innerHTML = resultHTML(res);
         store.log('spoken');
+        award(XP.spoken + (res.score >= 0.9 ? XP.clear : 0));
         panel.dispatchEvent(new CustomEvent('checked', { detail: res, bubbles: true }));
       }
     } catch (err) {
@@ -215,15 +359,16 @@ view.addEventListener('click', (e) => {
 
 function todayView() {
   const s = settings();
+  const m = me();
   const h = new Date().getHours();
   const greet = h < 11 ? 'Günaydın' : h < 18 ? 'Merhaba' : 'İyi akşamlar';
   const cards = store.cards();
   const due = cards.filter((c) => srs.isDue(c)).length;
-  const next = LESSONS.find((l) => !store.state.progress[l.id]);
-  const done = LESSONS.filter((l) => store.state.progress[l.id]).length;
+  const next = nextUp(m);
+  const nx = nextUnlock(m);
   const upcoming = cards.filter((c) => c.due && !srs.isDue(c)).sort((a, b) => a.due - b.due)[0];
   const streak = store.streak();
-  const pool = LESSONS.flatMap((l) => l.items).filter((it) => P.tokens(it.tr).length > 1);
+  const pool = LESSONS.filter((l) => isOpen(pathItem(l.id), m)).flatMap((l) => l.items).filter((it) => P.tokens(it.tr).length > 1);
   const dayNo = Math.floor(Date.now() / 864e5);
   const potd = pool[dayNo % pool.length];
 
@@ -236,6 +381,8 @@ function todayView() {
 
   ${S.canListen() ? '' : `<p class="notice">${MIC_ERRORS.unsupported}</p>`}
 
+  ${levelCardHTML(m)}
+
   <div class="today-grid">
     <article class="panel">
       <p class="eyebrow">Review</p>
@@ -244,10 +391,11 @@ function todayView() {
     : `<h2 class="big-num">0</h2><p class="muted">${upcoming ? `Nothing due. Next review in ${srs.fmt(upcoming.due - Date.now())}.` : 'Finish a lesson and its phrases start coming back here.'}</p>`}
     </article>
     <article class="panel">
-      <p class="eyebrow">Next lesson</p>
-      ${next ? `<h2 class="lesson-title">${esc(next.title)}</h2><p class="muted">Unit ${UNITS.indexOf(next.unit)} · ${esc(next.unit.title)}. ${esc(next.goal)}.</p>
-        <a class="btn ${due ? '' : 'primary'}" href="#lesson/${next.id}">${I.arrow}<span>Start lesson</span></a>`
-    : '<h2 class="lesson-title">Course complete</h2><p class="muted">Keep reviewing and add your own phrases. New lessons arrive with app updates.</p>'}
+      <p class="eyebrow">Up next${next ? ' · ' + KIND[next.kind] : ''}</p>
+      ${next ? `<h2 class="lesson-title">${esc(next.title)}</h2><p class="muted">${esc(next.sub)}</p>
+        <a class="btn ${due ? '' : 'primary'}" href="${next.href}">${I.arrow}<span>Start</span></a>`
+    : `<h2 class="lesson-title">All caught up</h2><p class="muted">Everything open so far is done. Review, replay a dialogue, and ${nx ? `level ${nx.level} opens more` : 'keep practising'}.</p>
+        <a class="btn" href="#path">Open the path</a>`}
     </article>
   </div>
 
@@ -255,38 +403,87 @@ function todayView() {
     <div><dt>Day streak</dt><dd>${streak}</dd></div>
     <div><dt>Phrases</dt><dd>${cards.filter((c) => c.kind === 'phrase').length}</dd></div>
     <div><dt>Words</dt><dd>${cards.filter((c) => c.kind === 'word').length}</dd></div>
-    <div><dt>Lessons</dt><dd>${done}/${LESSONS.length}</dd></div>
+    <div><dt>Done</dt><dd>${PATH.filter((p) => isDone(p.id)).length}/${PATH.length}</dd></div>
   </dl>
 
-  <section class="potd">
+  ${potd ? `<section class="potd">
     <p class="eyebrow">Phrase of the day</p>
     ${phraseHTML(potd.tr, { size: 'lg' })}
     <p class="en">${esc(fill(potd.en))}</p>
     ${audioHTML(potd.tr)}
-  </section>`;
+  </section>` : ''}`;
   local = {};
 }
 
 /* ---------- Path ---------- */
 
+const pathUI = { kind: 'all' };
+
 function pathView() {
-  const next = LESSONS.find((l) => !store.state.progress[l.id]);
+  const m = me();
+  const next = nextUp(m);
+  const shown = PATH.filter((p) => p.rank === 'A1' && (pathUI.kind === 'all' || p.kind === pathUI.kind));
+  const groups = new Map();
+  for (const p of shown) { if (!groups.has(p.level)) groups.set(p.level, []); groups.get(p.level).push(p); }
+  const feats = pathUI.kind === 'all' ? FEATURES : [];
+  for (const f of feats) if (!groups.has(f.level)) groups.set(f.level, []);
+  const levels = [...groups.keys()].sort((a, b) => a - b);
+  const here = Math.max(...levels.filter((L) => L <= m.level), levels[0]);
+  const passedA1 = rankIndex(m.rank.id) > 0;
+
+  const row = (p) => {
+    const open = isOpen(p, m);
+    const done = isDone(p.id);
+    const isNext = next?.id === p.id;
+    return `<li><a class="lrow${done ? ' done' : ''}${isNext ? ' next' : ''}${open ? '' : ' locked'}" href="${open ? p.href : '#path'}"${open ? '' : ` data-act="locked" data-level="${p.level}"`}>
+      <span class="lstate">${done ? I.check : open ? '' : I.lock}</span>
+      <span class="ltext"><b>${esc(p.title)}</b><small>${esc(p.sub)}</small></span>
+      <span class="tag k-${p.kind}">${KIND[p.kind]}</span>
+    </a></li>`;
+  };
+  const featRow = (f) => {
+    const open = featureOpen(f.id, m);
+    const href = f.id === 'mock' ? '#exam/mock' : f.id === 'exam' ? '#exam/A1' : '';
+    const done = f.id === 'exam' && passedA1;
+    const inner = `<span class="lstate">${done ? I.check : open ? I.star : I.lock}</span>
+      <span class="ltext"><b>${esc(f.title)}</b><small>${esc(f.sub)}</small></span>
+      <span class="tag ${href ? 'k-exam' : ''}">${href ? 'Exam' : 'Unlock'}</span>`;
+    if (href && open) return `<li><a class="lrow feature${done ? ' done' : ''}" href="${href}">${inner}</a></li>`;
+    return `<li><div class="lrow feature${open ? '' : ' locked'}"${open ? '' : ` data-act="locked" data-level="${f.level}" role="button" tabindex="0"`}>${inner}</div></li>`;
+  };
+
   view.innerHTML = `
-  <header class="page-head"><h1>Path</h1><p class="lede">From zero to talking with her family. Each lesson takes about ten minutes: hear it, echo it, understand it without text, then say it from memory.</p></header>
-  ${UNITS.map((u, ui) => `
-    <section class="unit">
-      <header><p class="eyebrow">Unit ${ui}</p><h2>${esc(u.title)}</h2><p class="muted">${esc(u.blurb)}</p></header>
-      <ol class="lessons">${u.lessons.map((l) => {
-        const done = store.state.progress[l.id];
-        const isNext = next && next.id === l.id;
-        return `<li><a class="lrow ${done ? 'done' : ''} ${isNext ? 'next' : ''}" href="#lesson/${l.id}">
-          <span class="lstate">${done ? I.check : ''}</span>
-          <span class="ltext"><b>${esc(l.title)}</b><small>${esc(l.goal)} · ${plural(l.items.length, 'phrase', 'phrases')}</small></span>
-          <span class="tag">${done ? 'Again' : isNext ? 'Next' : 'Open'}</span>
-        </a></li>`;
-      }).join('')}</ol>
-    </section>`).join('')}`;
-  local = {};
+  <header class="page-head"><h1>Path</h1><p class="lede">Practice earns XP, and every level opens something new. By level 20 the whole A1 course is open. At level 30 the A1 exam opens: pass it to reach A2.</p></header>
+
+  ${levelCardHTML(m)}
+
+  <details class="howto levels-help"><summary>How levels work</summary>
+    <p><b>XP.</b> A lesson or Build drill earns ${XP.lesson}, a dialogue ${XP.dialogue}, a story ${XP.story}, each review ${XP.review}, and each sentence you say out loud ${XP.spoken} (${XP.spoken + XP.clear} when it comes through clearly). Your first practice each day adds ${XP.daily}. Doing something again earns ${XP.again}.</p>
+    <p><b>Levels.</b> Each level needs a little more XP than the last. About ${DAILY_GOAL} XP a day, 15 to 20 minutes, reaches level 20 in a month.</p>
+    <p><b>Ranks.</b> Ranks follow the European levels: A1, A2, B1, B2, C1, C2. In A1, levels open lessons, drills, dialogues and stories step by step. The A1 exam opens at level 30: 20 questions of listening, speaking and conversation. Score 80% to reach A2, which opens all A2 grammar, vocabulary, dialogues and stories at once. Each rank after that ends with its own exam.</p>
+    <p><b>What A1 means.</b> You can introduce yourself, ask and answer simple questions, and get through everyday moments like a meal, a café or a phone call, if people speak slowly.</p>
+  </details>
+
+  <div class="filters" role="tablist">${[['all', 'All'], ['lesson', 'Lessons'], ['drill', 'Build'], ['dialogue', 'Talk'], ['story', 'Stories']].map(([k, t]) => `<button class="filter${pathUI.kind === k ? ' on' : ''}" data-act="pfilter" data-k="${k}" role="tab" aria-selected="${pathUI.kind === k}">${t}</button>`).join('')}</div>
+
+  <h2 class="rank-title"><span class="rank-badge small">A1</span>Beginner <span lang="tr" class="muted">Başlangıç</span></h2>
+  ${levels.map((L) => {
+    const items = groups.get(L);
+    const fs = feats.filter((f) => f.level === L);
+    if (!items.length && !fs.length) return '';
+    return `<section class="lvl-group${L <= m.level ? ' reached' : ''}" id="lv-${L}">
+      <header class="lvl-head"><span class="lvl-n">Level ${L}</span>${L === here ? '<span class="tag on">You are here</span>' : ''}</header>
+      <ol class="lessons">${items.map(row).join('')}${fs.map(featRow).join('')}</ol>
+    </section>`;
+  }).join('')}
+
+  <h2 class="rank-title${passedA1 ? '' : ' locked'}"><span class="rank-badge small">A2</span>Elementary <span lang="tr" class="muted">Temel</span></h2>
+  <p class="muted small">${passedA1 ? 'Open. These arrive in app updates as they are written.' : 'Pass the A1 exam to open all of this at once.'}</p>
+  <ol class="lessons">${NEXT_RANK.A2.filter((p) => pathUI.kind === 'all' || p.kind === pathUI.kind).map((p) => `<li><div class="lrow locked"${passedA1 ? '' : ' data-act="locked" data-rank="A2" role="button" tabindex="0"'}>
+    <span class="lstate">${passedA1 ? '' : I.lock}</span><span class="ltext"><b>${esc(p.title)}</b><small>${esc(p.sub)}</small></span><span class="tag k-${p.kind}">${passedA1 ? 'Soon' : KIND[p.kind]}</span>
+  </div></li>`).join('')}</ol>`;
+
+  local = { pfilter: (el) => { pathUI.kind = el.dataset.k; pathView(); } };
 }
 
 /* ---------- Sessions: lessons and reviews ---------- */
@@ -297,6 +494,7 @@ const GRADE = { 1: 'Again', 2: 'Hard', 3: 'Good', 4: 'Easy' };
 function lessonView(id) {
   const l = lessonById(id);
   if (!l) { location.hash = '#path'; return; }
+  if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
   if (!session || session.id !== 'L:' + id || session.finished) {
     const steps = [
       ...l.items.map((it, i) => ({ type: 'learn', it, n: i + 1 })),
@@ -317,6 +515,16 @@ function reviewView() {
     view.innerHTML = `<section class="done"><h1>Nothing to review</h1><p class="lede">Everything you know is fresh. Come back later, or start the next lesson.</p><a class="btn primary" href="#today">Back to Today</a></section>`;
     local = {};
     return;
+  }
+  drawStep();
+}
+
+function drillView(id) {
+  const d = drillById(id);
+  if (!d) { location.hash = '#path'; return; }
+  if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
+  if (!session || session.id !== 'D:' + id || session.finished) {
+    session = { id: 'D:' + id, kind: 'drill', drill: d, steps: [{ type: 'intro' }, ...d.items.map((it, i) => ({ type: 'build', it, n: i + 1 }))], i: 0, grades: {}, requeued: new Set(), ok: 0 };
   }
   drawStep();
 }
@@ -355,6 +563,23 @@ function drawStep() {
       </div>
       <div class="answer" hidden>${phraseHTML(it.tr, { size: 'lg' })}<p class="en">${esc(fill(it.en))}</p></div>
       <div class="next"><button class="btn primary" data-act="reveal">Show</button></div>`;
+  } else if (step.type === 'intro') {
+    const d = s.drill;
+    body = `<p class="eyebrow">Build · ${esc(d.goal)}</p>
+      <h1 class="prompt">${esc(d.title)}</h1>
+      ${d.intro.map((t) => `<p class="lede">${esc(t)}</p>`).join('')}
+      <table class="pattern"><tbody>${d.table.map(([tr, en]) => `<tr><td><button class="linkbtn" data-act="play" data-text="${esc(tr)}" lang="tr">${esc(tr)}</button></td><td>${esc(en)}</td></tr>`).join('')}</tbody></table>
+      <p class="muted small">Next: ${d.items.length} sentences. Read the English, say it in Turkish out loud, then check. Each one changes a single piece from the one before.</p>
+      <div class="next"><button class="btn primary" data-act="next">Start building ${I.arrow}</button></div>`;
+  } else if (step.type === 'build') {
+    const prev = s.steps[s.i - 1]?.type === 'build' ? s.steps[s.i - 1].it : null;
+    body = `<p class="eyebrow">Build · ${step.n ? `${step.n} of ${s.drill.items.length}` : 'one more time'}</p>
+      ${prev ? `<p class="last">Before: <span lang="tr">${esc(fill(prev.tr))}</span></p>` : ''}
+      <h2 class="prompt">${esc(fill(it.en))}</h2>
+      ${it.words.length ? `<p class="hint">${it.words.map((w) => `<span lang="tr">${esc(w.tr)}</span> ${esc(w.en)}`).join(' · ')}</p>` : ''}
+      ${speakHTML(it.tr)}
+      <div class="answer" hidden>${phraseHTML(it.tr, { size: 'lg' })}${audioHTML(it.tr)}${it.note ? `<p class="note">${esc(it.note)}</p>` : ''}</div>
+      <div class="next"><button class="btn" data-act="reveal">Show answer</button></div>`;
   } else {
     const card = cardFor(it);
     body = `<p class="eyebrow">${s.kind === 'review' ? 'Review' : 'From memory'} · say it in Turkish</p>
@@ -366,7 +591,7 @@ function drawStep() {
 
   view.innerHTML = `<div class="session">
     <div class="sbar">
-      <a class="iconlink" href="${s.kind === 'lesson' ? '#path' : '#today'}" aria-label="Close">${I.x}</a>
+      <a class="iconlink" href="${s.kind === 'review' ? '#today' : '#path'}" aria-label="Close">${I.x}</a>
       <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${s.i}"><span style="width:${(s.i / total) * 100}%"></span></div>
       <span class="count">${s.i + 1}/${total}</span>
     </div>
@@ -382,13 +607,20 @@ function drawStep() {
       advance();
     },
     grade: (el) => gradeStep(+el.dataset.g),
+    built: (el) => {
+      if (el.dataset.ok === '0') {
+        if (!s.requeued.has('d' + it.tr)) { s.requeued.add('d' + it.tr); s.steps.push({ type: 'build', it }); }
+      } else if (step.n) s.ok++;
+      advance();
+    },
   };
 
   $('.speak', view)?.addEventListener('checked', (e) => {
     if (step.type === 'recall') reveal(S.suggestGrade(e.detail.score));
+    if (step.type === 'build') reveal(e.detail.score >= 0.75 ? 'ok' : 'miss');
   });
 
-  if (step.type !== 'recall') S.speak(fill(it.tr));
+  if (step.type === 'learn' || step.type === 'blind') S.speak(fill(it.tr));
 }
 
 function reveal(suggest) {
@@ -401,6 +633,9 @@ function reveal(suggest) {
   const next = $('.next', view);
   if (step.type === 'blind') {
     next.innerHTML = `<button class="btn" data-act="blind" data-ok="0">Didn't get it</button><button class="btn primary" data-act="blind" data-ok="1">Got it</button>`;
+    S.speak(fill(step.it.tr));
+  } else if (step.type === 'build') {
+    next.innerHTML = `<button class="btn${suggest === 'miss' ? ' primary' : ''}" data-act="built" data-ok="0">Missed it</button><button class="btn${suggest === 'miss' ? '' : ' primary'}" data-act="built" data-ok="1">Got it</button>`;
     S.speak(fill(step.it.tr));
   } else {
     const card = cardFor(step.it);
@@ -419,6 +654,7 @@ function gradeStep(g) {
     const card = store.card(it.cardId);
     if (card) store.putCard(srs.grade(card, g));
     store.log('reviews');
+    award(XP.review);
     s.count++;
   } else {
     s.grades[it.tr] = g;
@@ -445,7 +681,20 @@ function finish() {
       <div class="row"><a class="btn primary" href="#today">Back to Today</a></div></section>`;
     return;
   }
+  if (s.kind === 'drill') {
+    const d = s.drill;
+    const first = !isDone(d.id);
+    const words = saveWords(d.items.flatMap((it) => it.words), d.id);
+    store.markLesson(d.id);
+    store.log('lessons');
+    award(first ? XP.drill : XP.again);
+    view.innerHTML = `<section class="done"><p class="eyebrow">Build done</p><h1 lang="tr">Aferin!</h1><p class="say muted-say">${sayHTML('Aferin')}</p>
+      <p class="lede">You built ${plural(s.ok, 'sentence', 'sentences')} out of ${d.items.length} on the first try.${words ? ` Saved ${plural(words, 'new word', 'new words')} to your vocab.` : ''} Do it again any time: speed comes from repetition.</p>
+      <div class="row">${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div></section>`;
+    return;
+  }
   const l = s.lesson;
+  const first = !isDone(l.id);
   const now = Date.now();
   let phrases = 0, words = 0;
   for (const it of l.items) {
@@ -465,11 +714,485 @@ function finish() {
   }
   store.markLesson(l.id);
   store.log('lessons');
-  const idx = LESSONS.findIndex((x) => x.id === l.id);
-  const nextL = LESSONS.slice(idx + 1).find((x) => !store.state.progress[x.id]) || LESSONS[idx + 1];
+  award(first ? XP.lesson : XP.again);
   view.innerHTML = `<section class="done"><p class="eyebrow">Lesson done</p><h1 lang="tr">Aferin!</h1><p class="say muted-say">${sayHTML('Aferin')}</p>
     <p class="lede">Well done. ${phrases || words ? `Saved ${plural(phrases, 'phrase', 'phrases')} and ${plural(words, 'word', 'words')} to your vocab.` : 'Everything here was already in your vocab.'} They come back for review in a few days.</p>
-    <div class="row">${nextL ? `<a class="btn primary" href="#lesson/${nextL.id}">${I.arrow}<span>Next: ${esc(nextL.title)}</span></a>` : ''}<a class="btn" href="#path">Back to path</a></div></section>`;
+    <div class="row">${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div></section>`;
+}
+
+/* ---------- Talk: dialogues ---------- */
+
+let talk = null;
+let playToken = 0; // bumped to stop a scene or story that is playing
+const listenUI = { english: false, fast: false, text: false };
+const fastOn = () => listenUI.fast && featureOpen('fast', me());
+
+const fastSwitchHTML = () => (featureOpen('fast', me())
+  ? `<label class="switch"><input id="fast" type="checkbox" ${listenUI.fast ? 'checked' : ''}><span>Native speed</span></label>` : '');
+const bindFast = () => $('#fast')?.addEventListener('change', (e) => { listenUI.fast = e.target.checked; });
+
+function bubbleHTML(line, i, { showEn = listenUI.english } = {}) {
+  return `<li class="bubble${line.who === 'you' ? ' mine' : ''}" data-i="${i}">
+    <span class="who">${esc(WHO[line.who])}</span>
+    <button class="btext" data-act="playline" data-i="${i}">
+      <span class="btr" lang="tr">${esc(fill(line.tr))}</span>
+      <span class="ben"${showEn ? '' : ' hidden'}>${esc(fill(line.en))}</span>
+    </button>
+  </li>`;
+}
+
+function talkView(id) {
+  const d = dialogueById(id);
+  if (!d) { location.hash = '#path'; return; }
+  if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
+  talk = { d, mode: 'intro', i: 0, scores: {}, listened: false };
+  drawTalkIntro();
+}
+
+function drawTalkIntro() {
+  playToken++;
+  S.stopSpeaking();
+  const { d } = talk;
+  const m = me();
+  const cast = [...new Set(d.lines.map((l) => l.who))].map((w) => WHO[w]).join(', ');
+  const mine = d.lines.filter((l) => l.who === 'you').length;
+  view.innerHTML = `
+  <div class="sbar"><a class="iconlink" href="#path" aria-label="Close">${I.x}</a><span class="eyebrow">Talk${isDone(d.id) ? ' · done' : ''}</span></div>
+  <header class="page-head"><h1>${esc(d.title)}</h1><p class="lede">${esc(d.scene)}</p>
+    <p class="muted small">${esc(cast)} · ${d.lines.length} lines, ${mine} of them yours</p></header>
+  <div class="modes">
+    <button class="mode" data-act="talkmode" data-m="listen">${I.ear}<b>Listen</b><small>Hear the whole scene with the text. Tap a line to hear it again.</small></button>
+    <button class="mode main" data-act="talkmode" data-m="play">${I.mic}<b>Play your part</b><small>They speak, you answer out loud. Your line is cued in English.</small></button>
+    ${featureOpen('nohints', m)
+    ? `<button class="mode" data-act="talkmode" data-m="nohints">${I.mic}<b>No hints</b><small>Answer from the situation alone. The English cue stays hidden until you ask.</small></button>`
+    : `<div class="mode locked" data-act="locked" data-level="15" role="button" tabindex="0">${I.lock}<b>No hints</b><small>Opens at level 15</small></div>`}
+  </div>
+  ${fastSwitchHTML()}`;
+  bindFast();
+  local = { talkmode: (el) => startTalk(el.dataset.m) };
+}
+
+function talkActions() {
+  return {
+    talkmode: (el) => startTalk(el.dataset.m),
+    talkexit: () => drawTalkIntro(),
+    playline: (el) => { playToken++; S.speak(fill(talk.d.lines[+el.dataset.i].tr), { fast: fastOn() }); },
+    toggleen: (el) => {
+      listenUI.english = !listenUI.english;
+      $$('.chat .ben', view).forEach((b) => { b.hidden = !listenUI.english; });
+      el.textContent = listenUI.english ? 'Hide English' : 'Show English';
+    },
+    replay: () => playScene(),
+    hint: (el) => { el.hidden = true; $('.hintline', view).hidden = false; },
+    talkreveal: () => talkAnswered(0),
+    talknext: () => { $('#turn').innerHTML = ''; talk.i++; talkStep(); },
+  };
+}
+
+async function playScene() {
+  const token = ++playToken;
+  S.stopSpeaking();
+  const items = $$('.chat .bubble', view);
+  for (let i = 0; i < talk.d.lines.length; i++) {
+    if (token !== playToken) return;
+    items.forEach((b, j) => b.classList.toggle('now', j === i));
+    items[i]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    await S.speak(fill(talk.d.lines[i].tr), { fast: fastOn() });
+    await wait(250);
+  }
+  if (token !== playToken) return;
+  items.forEach((b) => b.classList.remove('now'));
+  if (!talk.listened) { talk.listened = true; award(XP.listen); }
+}
+
+function startTalk(mode) {
+  playToken++;
+  S.stopSpeaking();
+  talk.mode = mode;
+  window.scrollTo(0, 0);
+  if (mode === 'listen') {
+    view.innerHTML = `
+    <div class="sbar"><button class="iconlink" data-act="talkexit" aria-label="Back">${I.back}</button><span class="eyebrow">Listen · ${esc(talk.d.title)}</span></div>
+    <ol class="chat">${talk.d.lines.map((l, i) => bubbleHTML(l, i)).join('')}</ol>
+    <div class="row">
+      <button class="btn" data-act="replay">${I.play}<span>Play again</span></button>
+      <button class="btn" data-act="toggleen">${listenUI.english ? 'Hide English' : 'Show English'}</button>
+      <button class="btn primary" data-act="talkmode" data-m="play">${I.mic}<span>Play your part</span></button>
+    </div>`;
+    local = talkActions();
+    playScene();
+    return;
+  }
+  talk.i = 0;
+  talk.scores = {};
+  view.innerHTML = `
+  <div class="sbar">
+    <button class="iconlink" data-act="talkexit" aria-label="Back">${I.back}</button>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${talk.d.lines.length}"><span style="width:0%"></span></div>
+    <span class="count"></span>
+  </div>
+  <ol class="chat" id="chat"></ol>
+  <div id="turn"></div>`;
+  local = talkActions();
+  talkStep();
+}
+
+function talkBar() {
+  const n = talk.d.lines.length;
+  const bar = $('.sbar .progress span', view);
+  if (bar) bar.style.width = `${(Math.min(talk.i, n) / n) * 100}%`;
+  const c = $('.sbar .count', view);
+  if (c) c.textContent = `${Math.min(talk.i + 1, n)}/${n}`;
+}
+
+function addBubble(i) {
+  const chat = $('#chat');
+  if (!chat || chat.querySelector(`[data-i="${i}"]`)) return;
+  chat.insertAdjacentHTML('beforeend', bubbleHTML(talk.d.lines[i], i, { showEn: false }));
+  chat.lastElementChild.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+async function talkStep() {
+  const { d } = talk;
+  const token = playToken;
+  talkBar();
+  while (talk.i < d.lines.length && d.lines[talk.i].who !== 'you') {
+    addBubble(talk.i);
+    await S.speak(fill(d.lines[talk.i].tr), { fast: fastOn() });
+    if (token !== playToken) return;
+    await wait(300);
+    if (token !== playToken) return;
+    talk.i++;
+    talkBar();
+  }
+  if (talk.i >= d.lines.length) { talkDone(); return; }
+  const line = d.lines[talk.i];
+  const hints = talk.mode !== 'nohints';
+  $('#turn').innerHTML = `<div class="turn">
+    <p class="eyebrow">Your turn</p>
+    ${hints ? `<h2 class="prompt">${esc(fill(line.en))}</h2>`
+    : `<h2 class="prompt">What do you say?</h2><button class="btn ghost small" data-act="hint">Show the English</button><p class="hintline en" hidden>${esc(fill(line.en))}</p>`}
+    ${speakHTML(line.tr)}
+    <div class="next"><button class="btn ghost" data-act="talkreveal">Show my line</button></div>
+  </div>`;
+  hydrateRecordings($('#turn'));
+  $('#turn .speak').addEventListener('checked', (e) => talkAnswered(e.detail.score));
+  $('#turn').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function talkAnswered(score) {
+  const first = !(talk.i in talk.scores);
+  talk.scores[talk.i] = Math.max(talk.scores[talk.i] ?? 0, score || 0);
+  if (!first) return;
+  addBubble(talk.i);
+  S.speak(fill(talk.d.lines[talk.i].tr), { fast: fastOn() });
+  $('#turn .next').innerHTML = `<button class="btn primary" data-act="talknext">Continue ${I.arrow}</button>`;
+}
+
+function talkDone() {
+  const { d } = talk;
+  talkBar();
+  const mine = d.lines.map((l, i) => [l, i]).filter(([l]) => l.who === 'you');
+  const clear = mine.filter(([, i]) => (talk.scores[i] || 0) >= 0.75).length;
+  const first = !isDone(d.id);
+  const now = Date.now();
+  let saved = 0;
+  for (const [l, i] of mine) {
+    const tr = fill(l.tr);
+    const kind = kindOf(tr);
+    const id = cardId(kind, tr);
+    if (store.card(id)) continue;
+    store.putCard(srs.grade({ id, kind, tr, en: fill(l.en), src: d.id, added: now }, (talk.scores[i] || 0) >= 0.75 ? 3 : 2, now));
+    saved++;
+  }
+  saveWords(d.lines.flatMap((l) => l.words), d.id);
+  store.markLesson(d.id);
+  store.log('lessons');
+  award(first ? XP.dialogue : XP.again);
+  $('#turn').innerHTML = `<section class="done">
+    <p class="eyebrow">Scene done</p><h1 lang="tr">Aferin!</h1>
+    <p class="lede">${S.canListen() ? `${clear} of ${mine.length} of your lines came through clearly. ` : ''}${saved ? `Saved ${plural(saved, 'line', 'lines')} you said to your vocab, so they come back in review.` : 'Your lines are already in your vocab.'}</p>
+    <div class="row"><button class="btn" data-act="talkmode" data-m="${talk.mode}">Play it again</button>${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div>
+  </section>`;
+}
+
+/* ---------- Stories ---------- */
+
+// Words you've met: your vocab plus everything in the lessons, drills, dialogues and stories you've finished.
+function metWords() {
+  const known = new Set();
+  const add = (t) => P.tokens(fill(t)).forEach((w) => known.add(P.clean(w)));
+  const addAll = (lines) => lines.forEach((l) => { add(l.tr); (l.words || []).forEach((w) => add(w.tr)); });
+  for (const c of store.cards()) add(c.tr);
+  for (const l of LESSONS) if (isDone(l.id)) addAll(l.items);
+  for (const d of DRILLS) if (isDone(d.id)) addAll(d.items);
+  for (const d of DIALOGUES) if (isDone(d.id)) addAll(d.lines);
+  for (const st of STORIES) if (isDone(st.id)) addAll(st.lines);
+  return known;
+}
+
+// Turkish stacks endings on a root, so a word counts as known when you know its root:
+// "telefon" covers "telefonumu", "gel" covers "gelelim".
+function knowsWord(known, w) {
+  if (known.has(w)) return true;
+  for (const k of known) {
+    if (k.length >= 3 && w.startsWith(k)) return true;
+    const m = Math.min(k.length, w.length);
+    if (m < 4) continue;
+    let i = 0;
+    while (i < m && k[i] === w[i]) i++;
+    if (i >= Math.min(5, m)) return true;
+  }
+  return false;
+}
+
+function storyWords(st, known = metWords()) {
+  const name = P.clean(settings().name);
+  const words = [...new Set(st.lines.flatMap((l) => P.tokens(fill(l.tr)).map(P.clean)))].filter((w) => w && w !== name);
+  const pct = words.length ? Math.round((words.filter((w) => knowsWord(known, w)).length / words.length) * 100) : 100;
+  const seen = new Set();
+  const fresh = st.lines.flatMap((l) => l.words).filter((w) => {
+    const k = P.clean(w.tr);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return !P.tokens(w.tr).every((t) => knowsWord(known, P.clean(t)));
+  });
+  return { pct, fresh };
+}
+
+// Each word becomes a button: tap it to hear it and see what it means.
+function tapWordsHTML(text) {
+  return fill(text).split(/(\s+)/).map((chunk) => {
+    const m = chunk.match(/^([^\p{L}]*)([\p{L}’']+?)([^\p{L}]*)$/u);
+    if (!m) return esc(chunk);
+    return `${esc(m[1])}<button class="w" data-act="gloss" data-w="${esc(m[2])}">${esc(m[2])}</button>${esc(m[3])}`;
+  }).join('');
+}
+
+function storyView(id) {
+  const st = storyById(id);
+  if (!st) { location.hash = '#path'; return; }
+  if (!isOpen(pathItem(id), me())) { lockedView(pathItem(id)); return; }
+  const answers = {};
+  const { pct, fresh } = storyWords(st);
+  view.innerHTML = `
+  <div class="sbar"><a class="iconlink" href="#path" aria-label="Close">${I.x}</a><span class="eyebrow">Story${isDone(st.id) ? ' · done' : ''}</span></div>
+  <header class="page-head"><h1 lang="tr">${esc(st.title)}</h1><p class="lede">${esc(st.en)}</p>
+    <p class="muted small">You know ${pct}% of the words in this story${fresh.length ? '. The rest are below' : ''}.</p></header>
+  ${fresh.length ? `<section class="block"><h3>New in this story</h3>
+    <div class="newwords">${fresh.map((w) => `<button class="newword" data-act="play" data-text="${esc(w.tr)}"><b lang="tr">${esc(w.tr)}</b><span>${esc(w.en)}</span></button>`).join('')}</div>
+  </section>` : ''}
+  <p class="note">${fresh.length ? 'Tap each new word to hear it. Then listen' : 'Listen'} without the text and follow what you can, and answer the questions. Show the text, or tap a word, only when you need to.</p>
+  <div class="row">
+    <button class="btn primary" data-act="storyplay">${I.play}<span>Play the story</span></button>
+    <button class="btn" data-act="storytext">${listenUI.text ? 'Hide text' : 'Show text'}</button>
+  </div>
+  ${fastSwitchHTML()}
+  <ol class="story${listenUI.text ? '' : ' notext'}">${st.lines.map((l, i) => `<li class="sline" data-i="${i}">
+    <button class="play-mini" data-act="storyline" data-i="${i}" aria-label="Play line ${i + 1}">${I.play}</button>
+    <div class="sbody"><p class="str" lang="tr">${tapWordsHTML(l.tr)}</p><p class="sen" hidden>${esc(fill(l.en))}</p></div>
+    <button class="en-btn" data-act="storyen" data-i="${i}" aria-label="Show the English">EN</button>
+  </li>`).join('')}</ol>
+  <section class="block"><h3>Questions</h3>
+    ${st.questions.map((q, qi) => `<div class="mcq"><p><b>${qi + 1}.</b> ${esc(fill(q.q))}</p>
+      <div class="opts">${q.options.map((o, oi) => `<button class="opt" data-act="answer" data-q="${qi}" data-o="${oi}">${esc(o)}</button>`).join('')}</div></div>`).join('')}
+  </section>
+  <div id="story-end"></div>`;
+  bindFast();
+
+  const playFrom = async (start, only = false) => {
+    const token = ++playToken;
+    S.stopSpeaking();
+    const rows = $$('.sline', view);
+    for (let i = start; i < (only ? start + 1 : st.lines.length); i++) {
+      if (token !== playToken) return;
+      rows.forEach((r, j) => r.classList.toggle('now', j === i));
+      if (!only) rows[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      await S.speak(fill(st.lines[i].tr), { fast: fastOn() });
+      await wait(only ? 0 : 350);
+    }
+    if (token === playToken) rows.forEach((r) => r.classList.remove('now'));
+  };
+
+  local = {
+    storyplay: () => playFrom(0),
+    storyline: (el) => playFrom(+el.dataset.i, true),
+    storytext: (el) => {
+      listenUI.text = !listenUI.text;
+      $('.story', view).classList.toggle('notext', !listenUI.text);
+      el.textContent = listenUI.text ? 'Hide text' : 'Show text';
+    },
+    storyen: (el) => { const p = $('.sen', el.closest('.sline')); p.hidden = !p.hidden; },
+    gloss: (el) => {
+      const w = el.dataset.w;
+      const gl = glossMap();
+      const extra = st.lines.flatMap((l) => l.words).find((x) => P.clean(x.tr) === P.clean(w));
+      const mean = gl.get(P.clean(w)) || extra?.en;
+      playToken++;
+      S.speak(w);
+      toast(mean ? `${w}: ${mean}` : `${w}: not in your vocab yet. Show the English for the whole line.`);
+    },
+    answer: (el) => {
+      const qi = +el.dataset.q;
+      if (qi in answers) return;
+      answers[qi] = +el.dataset.o;
+      const q = st.questions[qi];
+      $$('.opt', el.closest('.mcq')).forEach((b, j) => {
+        b.disabled = true;
+        if (j === q.a) b.classList.add('right');
+        else if (j === answers[qi]) b.classList.add('wrong');
+      });
+      if (Object.keys(answers).length < st.questions.length) return;
+      const right = st.questions.filter((qq, i) => answers[i] === qq.a).length;
+      const first = !isDone(st.id);
+      saveWords(st.lines.flatMap((l) => l.words), st.id);
+      store.markLesson(st.id);
+      store.log('lessons');
+      award((first ? XP.story : XP.again) + right * XP.answer);
+      $('#story-end').innerHTML = `<section class="done">
+        <p class="eyebrow">Story done</p><h1 lang="tr">${right === st.questions.length ? 'Harika!' : 'Aferin!'}</h1>
+        <p class="lede">${right} of ${st.questions.length} right. ${right < st.questions.length ? 'Show the text and listen once more: the answers are all in there.' : 'You followed the whole story by ear.'}</p>
+        <div class="row">${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div>
+      </section>`;
+    },
+  };
+}
+
+/* ---------- Exams ---------- */
+
+let exam = null;
+const PASS = 0.8;
+
+function examView(kind) {
+  const m = me();
+  const mock = kind === 'mock';
+  if (!mock && kind !== 'A1') { location.hash = '#path'; return; }
+  const passed = !!store.state.progress['rank:A2'];
+  const open = mock ? featureOpen('mock', m) : (m.level >= 30 || passed);
+  if (!open) { lockedView({ kind: 'exam', rank: 'A1', title: mock ? 'Practice exam' : 'A1 exam', level: mock ? 20 : 30 }); return; }
+  const failedToday = !mock && !passed && store.state.stats.days[dayKey()]?.examFail;
+  view.innerHTML = `
+  <div class="sbar"><a class="iconlink" href="#path" aria-label="Close">${I.x}</a><span class="eyebrow">${mock ? 'Practice exam' : 'Rank exam'}</span></div>
+  <header class="page-head"><h1>${mock ? 'A1 practice exam' : 'A1 exam'}</h1>
+    <p class="lede">${mock ? 'The same format as the real exam. Take it as often as you like.' : passed ? `You passed on ${new Date(store.state.progress['rank:A2'].at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}. Take it again any time for practice.` : 'Pass it to become A2. Everything in A2 opens at once: grammar, vocabulary, dialogues and stories.'}</p></header>
+  <ol class="exam-parts">
+    <li><b>Listening</b><span>6 questions. Hear a sentence, choose what it means.</span></li>
+    <li><b>Speaking</b><span>8 questions. Read the English, say it in Turkish.</span></li>
+    <li><b>Conversation</b><span>6 questions. Hear a line, choose the right answer.</span></li>
+  </ol>
+  <p class="muted small">Pass mark: ${Math.round(20 * PASS)} of 20. ${mock ? '' : 'If you don\'t pass, you can try again tomorrow.'}${S.canListen() ? '' : ' This browser can\'t check speech, so in the speaking part you mark yourself.'}</p>
+  ${failedToday ? '<p class="notice">Not this time. The exam opens again tomorrow: until then, the practice exam and your reviews are the best preparation.</p>'
+    : `<div class="row"><button class="btn primary" data-act="exstart">${I.arrow}<span>Start</span></button></div>`}`;
+  local = { exstart: () => { exam = buildExam(mock); drawExamQ(); } };
+}
+
+function buildExam(mock) {
+  const seen = new Set();
+  const pool = shuffle([...LESSONS.flatMap((l) => l.items), ...DRILLS.flatMap((d) => d.items)]
+    .filter((it) => P.tokens(it.tr).length > 1 && !it.tr.includes('{') && !seen.has(it.tr) && seen.add(it.tr)));
+  const others = (en) => shuffle(pool.filter((o) => o.en !== en)).slice(0, 3).map((o) => o.en);
+  const listen = pool.slice(0, 6).map((it) => ({ type: 'listen', it, options: shuffle([it.en, ...others(it.en)]), answer: it.en }));
+  const speak = pool.slice(6, 14).map((it) => ({ type: 'speak', it }));
+  const yours = DIALOGUES.flatMap((d) => d.lines.filter((l) => l.who === 'you' && !l.tr.includes('{')));
+  const turns = DIALOGUES.flatMap((d) => d.lines.slice(0, -1).map((l, i) => [l, d.lines[i + 1]])).filter(([a, b]) => a.who !== 'you' && b.who === 'you' && !a.tr.includes('{'));
+  const convo = shuffle(turns).slice(0, 6).map(([cue, reply]) => ({
+    type: 'convo', cue, answer: reply.tr, options: shuffle([reply.tr, ...shuffle(yours.filter((l) => l.tr !== reply.tr)).slice(0, 2).map((l) => l.tr)]),
+  }));
+  return { mock, qs: [...listen, ...speak, ...convo], i: 0, right: 0 };
+}
+
+function drawExamQ() {
+  const e = exam;
+  const q = e.qs[e.i];
+  const n = e.qs.length;
+  q.done = false;
+  let body = '';
+  if (q.type === 'listen') {
+    body = `<p class="eyebrow">Listening · ${e.i + 1} of ${n}</p>
+      <h2 class="prompt">What does it mean?</h2>
+      <div class="audio big"><button class="btn primary" data-act="play" data-text="${esc(q.it.tr)}">${I.play}<span>Listen again</span></button></div>
+      <div class="opts col">${q.options.map((o, oi) => `<button class="opt" data-act="exans" data-o="${oi}">${esc(fill(o))}</button>`).join('')}</div>`;
+  } else if (q.type === 'speak') {
+    body = `<p class="eyebrow">Speaking · ${e.i + 1} of ${n}</p>
+      <h2 class="prompt">${esc(fill(q.it.en))}</h2>
+      ${S.canListen() ? speakHTML(q.it.tr) : '<p class="muted">Say it out loud, then show the answer and mark yourself honestly.</p>'}
+      <div class="answer" hidden>${phraseHTML(q.it.tr, { size: 'lg' })}</div>
+      <div class="next"><button class="btn ghost" data-act="exshow">${S.canListen() ? 'I don\'t know' : 'Show the answer'}</button></div>`;
+  } else {
+    body = `<p class="eyebrow">Conversation · ${e.i + 1} of ${n}</p>
+      <p class="muted">${esc(WHO[q.cue.who])} says:</p>
+      <h2 class="prompt">What do you answer?</h2>
+      <div class="audio big"><button class="btn primary" data-act="play" data-text="${esc(q.cue.tr)}">${I.play}<span>Listen again</span></button></div>
+      <div class="opts col">${q.options.map((o, oi) => `<button class="opt" data-act="exans" data-o="${oi}" lang="tr">${esc(fill(o))}</button>`).join('')}</div>`;
+  }
+  view.innerHTML = `<div class="session">
+    <div class="sbar">
+      <a class="iconlink" href="#path" aria-label="Leave the exam">${I.x}</a>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${e.i}"><span style="width:${(e.i / n) * 100}%"></span></div>
+      <span class="count">${e.i + 1}/${n}</span>
+    </div>
+    <div class="stage">${body}<div class="exnext"></div></div>
+  </div>`;
+  window.scrollTo(0, 0);
+
+  const settle = (ok) => {
+    if (q.done) return;
+    q.done = true;
+    if (ok) e.right++;
+    $('.exnext', view).innerHTML = `<p class="verdict ${ok ? 'ok' : 'miss'}"><span>${ok ? 'Right.' : 'Not this one.'}</span></p>
+      <div class="next"><button class="btn primary" data-act="exnext">${e.i + 1 < n ? 'Next' : 'See result'} ${I.arrow}</button></div>`;
+  };
+
+  local = {
+    exans: (el) => {
+      if (q.done) return;
+      const pick = q.options[+el.dataset.o];
+      $$('.opt', view).forEach((b, j) => {
+        b.disabled = true;
+        if (q.options[j] === q.answer) b.classList.add('right');
+        else if (b === el) b.classList.add('wrong');
+      });
+      settle(pick === q.answer);
+    },
+    exshow: () => {
+      $('.answer', view).hidden = false;
+      S.speak(fill(q.it.tr));
+      if (S.canListen()) { settle(false); return; }
+      $('.next', view).innerHTML = `<button class="btn" data-act="exself" data-ok="0">I got it wrong</button><button class="btn primary" data-act="exself" data-ok="1">I said it right</button>`;
+    },
+    exself: (el) => { $('.next', view).innerHTML = ''; settle(el.dataset.ok === '1'); },
+    exnext: () => { e.i++; if (e.i < n) drawExamQ(); else examResult(); },
+  };
+  $('.speak', view)?.addEventListener('checked', (ev) => {
+    if (q.done) return;
+    $('.answer', view).hidden = false;
+    $('.next', view).innerHTML = '';
+    settle(ev.detail.score >= 0.75);
+  });
+  if (q.type === 'listen') S.speak(fill(q.it.tr));
+  if (q.type === 'convo') S.speak(fill(q.cue.tr));
+}
+
+function examResult() {
+  const e = exam;
+  const n = e.qs.length;
+  const pass = e.right / n >= PASS;
+  const wasA1 = !store.state.progress['rank:A2'];
+  if (e.mock) award(XP.again);
+  else if (pass) { store.markLesson('rank:A2'); if (wasA1) award(XP.exam); else award(XP.again); }
+  else store.log('examFail');
+  exam = null;
+  view.innerHTML = `<section class="done">
+    <p class="eyebrow">${e.mock ? 'Practice exam' : 'A1 exam'} · result</p>
+    <h1 class="big-num">${e.right} / ${n}</h1>
+    <h2 class="lesson-title" lang="tr">${pass ? 'Tebrikler!' : 'Olsun, devam!'}</h2>
+    <p class="lede">${pass
+    ? (e.mock ? 'That would pass the real exam.' : wasA1 ? 'You\'re A2 now. Everything in A2 is open, and the path shows what\'s coming.' : 'Passed again.')
+    : `You need ${Math.round(n * PASS)} to pass. ${e.mock ? 'Review, replay a few dialogues, and try again.' : 'Try again tomorrow. Until then, the practice exam and your reviews are the best preparation.'}`}</p>
+    <div class="row"><a class="btn primary" href="#path">Back to path</a>${e.mock ? '<a class="btn" href="#exam/mock">Take it again</a>' : ''}</div>
+  </section>`;
+  local = {};
+  drawLevelChip();
 }
 
 /* ---------- Vocab ---------- */
@@ -925,8 +1648,10 @@ function settingsView() {
 
 /* ---------- router and shell ---------- */
 
-const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, add: addView, settings: settingsView };
-const TAB_OF = { today: 'today', review: 'today', path: 'path', lesson: 'path', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', settings: '' };
+const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, drill: drillView, talk: talkView, story: storyView, exam: examView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, add: addView, settings: settingsView };
+const TAB_OF = { today: 'today', review: 'today', path: 'path', lesson: 'path', drill: 'path', talk: 'path', story: 'path', exam: 'path', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', settings: '' };
+const SESSIONS = new Set(['lesson', 'review', 'drill']);
+const FOCUS = new Set(['lesson', 'review', 'drill', 'talk', 'story', 'exam']);
 let cleanup = null;
 let current = '';
 
@@ -935,21 +1660,24 @@ function render() {
   const route = ROUTES[name] ? name : 'today';
   const arg = decodeURIComponent(rest.join('/'));
   cleanup?.(); cleanup = null;
+  playToken++;
+  document.querySelector('.levelup')?.remove();
   S.stopListening();
   if (recorder) { recorder.stop(); recorder = null; }
   S.stopSpeaking();
   current = route;
-  document.body.classList.toggle('focus', route === 'lesson' || route === 'review');
+  document.body.classList.toggle('focus', FOCUS.has(route));
   $$('.tabs a').forEach((a) => a.classList.toggle('on', a.dataset.tab === TAB_OF[route]));
-  if (route !== 'lesson' && route !== 'review' && session?.finished) session = null;
+  if (!SESSIONS.has(route) && session?.finished) session = null;
   ROUTES[route](arg);
-  if (route !== 'lesson' && route !== 'review') window.scrollTo(0, 0);
+  window.scrollTo(0, 0);
 }
 
 function shell() {
   $('#tabs').innerHTML = [['today', 'Today', I.today], ['path', 'Path', I.path], ['vocab', 'Vocab', I.vocab], ['pronounce', 'Pronounce', I.pron]]
     .map(([k, t, ic]) => `<a href="#${k}" data-tab="${k}">${ic}<span>${t}</span></a>`).join('');
   $('#settings-link').innerHTML = I.sliders;
+  drawLevelChip();
   sync.onStatus((st) => {
     const el = $('#sync');
     const map = { on: 'Synced', 'signed-out': 'Sign in to sync', error: 'Sync paused' };
@@ -961,7 +1689,7 @@ function shell() {
 
 let redrawTimer = null;
 store.subscribe((kind) => {
-  if (kind === 'meta' || kind === 'all') { S.setVoice(settings().voiceURI, settings().rate); S.setRecordedVoice(settings().recordedVoice); }
+  if (kind === 'meta' || kind === 'all') { S.setVoice(settings().voiceURI, settings().rate); S.setRecordedVoice(settings().recordedVoice); drawLevelChip(); }
   if (!['today', 'path'].includes(current) && !(current === 'vocab' && kind !== 'meta')) return;
   clearTimeout(redrawTimer);
   redrawTimer = setTimeout(() => {
