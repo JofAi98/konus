@@ -954,6 +954,24 @@ function seedKnown() {
   store.markSeeded();
 }
 
+for (const type of ['touchend', 'click']) document.addEventListener(type, S.unlockAudio, { capture: true, once: true });
+
+let toastTimer = null;
+function toast(text) {
+  let el = $('#toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; el.setAttribute('role', 'status'); document.body.append(el); }
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 6000);
+}
+window.addEventListener('speech-error', (e) => {
+  const noVoice = ['language-unavailable', 'voice-unavailable', 'synthesis-unavailable'].includes(e.detail);
+  toast(noVoice
+    ? 'No Turkish voice on this device. iPhone: Settings, Accessibility, Spoken Content, Voices, Turkish.'
+    : 'The audio could not play. Check that silent mode is off and the volume is up, then tap again.');
+});
+
 S.setVoice(settings().voiceURI, settings().rate);
 seedKnown();
 shell();

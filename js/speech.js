@@ -27,17 +27,57 @@ function pickVoice() {
   return [...voices].sort((a, b) => score(b) - score(a))[0] || null;
 }
 
+// iPhone mutes web speech when the phone is on silent and drops speech that
+// doesn't start from a tap. Call this from the first tap: it switches the page
+// to media playback (which ignores the silent switch) and warms up the voice.
+let unlocked = false;
+export function unlockAudio() {
+  if (unlocked) return;
+  unlocked = true;
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* older Safari */ }
+  try {
+    const n = 800;
+    const buf = new ArrayBuffer(44 + n);
+    const v = new DataView(buf);
+    const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE'); str(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+    str(36, 'data'); v.setUint32(40, n, true);
+    for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+    const a = new Audio(URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })));
+    a.setAttribute('playsinline', '');
+    a.play().catch(() => {});
+  } catch { /* no audio element support */ }
+  try {
+    if (canSpeak()) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }
+  } catch { /* speech not available */ }
+}
+
+let current = null;
+
 export function speak(text, { slow = false } = {}) {
   return new Promise((resolve) => {
     if (!canSpeak() || !text) return resolve();
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'tr-TR';
-    const v = pickVoice();
-    if (v) u.voice = v;
-    u.rate = slow ? Math.max(0.45, rate * 0.62) : rate;
-    u.onend = u.onerror = () => resolve();
-    speechSynthesis.speak(u);
+    const go = () => {
+      const u = new SpeechSynthesisUtterance(text);
+      current = u; // keep a reference: some engines drop utterances nothing points to
+      u.lang = 'tr-TR';
+      const v = pickVoice();
+      if (v) u.voice = v;
+      u.rate = slow ? Math.max(0.45, rate * 0.62) : rate;
+      u.onend = () => { if (current === u) current = null; resolve(); };
+      u.onerror = (e) => {
+        if (current === u) current = null;
+        if (e.error !== 'interrupted' && e.error !== 'canceled') window.dispatchEvent(new CustomEvent('speech-error', { detail: e.error }));
+        resolve();
+      };
+      speechSynthesis.resume();
+      speechSynthesis.speak(u);
+    };
+    // Safari drops a new utterance spoken in the same instant as cancel().
+    // The silent warm-up from unlockAudio() is left to finish on its own.
+    if (current && (speechSynthesis.speaking || speechSynthesis.pending)) { speechSynthesis.cancel(); setTimeout(go, 90); } else go();
   });
 }
 
