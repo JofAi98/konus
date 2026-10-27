@@ -3,6 +3,8 @@
 Learn to speak Turkish from zero. Speaking first: listen, echo, understand without text, then say it from memory. Built for an Italian speaker, in English.
 
 - 12 units, 29 lessons, 12 Build drills (grammar you say out loud), 12 dialogues you play a part in, 6 listening stories
+- Themes: 15 A1 topics of 10 words each, one at a time. Hear them from English, guess them from Turkish; 3 right guesses and a word goes to your vocab
+- Vocab filters by level and by topic
 - Levels and ranks: practice earns XP, levels open content step by step, rank exams follow the European levels (A1 to C2)
 - A sound line under every phrase (te-shek-**KÜR** e-**DE**-rim), computed from the spelling
 - Speech checking with the browser's Turkish recognition, with sound-level hints
@@ -73,6 +75,7 @@ Hunter ranks sit on top of the European levels: F (tutorial), E (A1), E+ (A1+, l
 | `js/drills.js` | Build drills: a grammar pattern and sentences to build from English |
 | `js/dialogues.js` | Talk: short scenes, your lines marked `you` |
 | `js/stories.js` | Listening stories with questions |
+| `js/themes.js` | Themes and their words, in the order they open |
 | `js/levels.js` | XP, levels, ranks, the path and what each level opens |
 | `js/pron.js` | Syllables, stress and the sound line. Stress exceptions go in `STRESS`. |
 | `js/speech.js` | Recorded and device voices, speech checking, recording |

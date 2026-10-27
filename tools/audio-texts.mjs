@@ -6,6 +6,7 @@ import { SAMPLES, audioHash } from '../js/voices.js';
 import { DRILLS } from '../js/drills.js';
 import { DIALOGUES } from '../js/dialogues.js';
 import { STORIES } from '../js/stories.js';
+import { THEMES } from '../js/themes.js';
 
 const NAME = 'Giosuè';
 const fill = (s) => s.replaceAll('{name}', NAME);
@@ -36,6 +37,7 @@ if (process.argv[2] === 'samples') {
     it.words.forEach((w) => add(w.tr));
   }
   ['Aferin', 'Harika'].forEach(add);
+  THEMES.forEach((t) => t.words.forEach((w) => { add(w.tr); tokens(w.tr).forEach(add); }));
   SOUNDS.forEach((s) => add(s.ex));
   ['Günaydın', 'Merhaba', 'İyi akşamlar', 'Aferin', 'Merhaba, nasılsın?', 'Teşekkür ederim', 'güzel', 'teşekkürler', 'akşam', 'akşamlar', 'seviyorum', 'anlamıyorum', 'Hazır mısın', 'Merhaba!', 'Seni seviyorum.'].forEach(add);
 }

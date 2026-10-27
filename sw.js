@@ -1,7 +1,7 @@
 // Network first, so every app update arrives the next time you open it.
 // The cached copy keeps the app working offline.
-const CACHE = 'konus-v7';
-const ASSETS = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/course.js', 'js/pron.js', 'js/speech.js', 'js/srs.js', 'js/store.js', 'js/sync.js', 'js/firebase-config.js', 'js/voices.js', 'js/levels.js', 'js/drills.js', 'js/dialogues.js', 'js/stories.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'konus-v8';
+const ASSETS = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/course.js', 'js/pron.js', 'js/speech.js', 'js/srs.js', 'js/store.js', 'js/sync.js', 'js/firebase-config.js', 'js/voices.js', 'js/levels.js', 'js/drills.js', 'js/dialogues.js', 'js/stories.js', 'js/themes.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();

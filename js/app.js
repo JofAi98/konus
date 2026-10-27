@@ -9,6 +9,7 @@ import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, TUTORIAL, HUNTER, LADD
 import { DRILLS, drillById } from './drills.js';
 import { DIALOGUES, dialogueById, WHO } from './dialogues.js';
 import { STORIES, storyById } from './stories.js';
+import { THEMES, NEED, themeById, wordKey } from './themes.js';
 
 /* ---------- helpers ---------- */
 
@@ -44,6 +45,7 @@ const I = {
   ear: svg('<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/>'),
   copy: svg('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>'),
   lock: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>'),
+  themes: svg('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),
   star: svg('<path d="M12 3.8l2.5 5.2 5.6.7-4.1 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4.1-3.9 5.6-.7z"/>'),
 };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -170,7 +172,7 @@ const xpToGo = (level, m = me()) => xpToReach(level, m);
 // XP only counts at your own rank: an A1 phrase earns XP while you're A1, a B1 phrase while you're B1.
 // xpFrom is the rank of what's on screen; null means it belongs to your rank (like phrases you add).
 let xpFrom = null;
-const cardRank = (c) => (c?.src === 'known' ? 'A1' : pathItem(c?.src)?.rank || null);
+const cardRank = (c) => c?.rank || (c?.src === 'known' ? 'A1' : c?.src?.startsWith('theme:') ? themeById(c.src.slice(6))?.rank : pathItem(c?.src)?.rank) || null;
 let belowNoted = false;
 
 // The next level (within A1) that opens something, and what it opens.
@@ -430,6 +432,7 @@ function todayView() {
   const pool = LESSONS.filter((l) => isOpen(pathItem(l.id), m)).flatMap((l) => l.items).filter((it) => P.tokens(it.tr).length > 1);
   const dayNo = Math.floor(Date.now() / 864e5);
   const potd = pool[dayNo % pool.length];
+  const theme = currentTheme(m);
 
   view.innerHTML = `
   <section class="hello">
@@ -456,6 +459,11 @@ function todayView() {
     : `<h2 class="lesson-title">All caught up</h2><p class="muted">Everything open so far is done. Review, replay a dialogue, and ${nx ? `level ${nx.level} opens more` : 'keep practising'}.</p>
         <a class="btn" href="#path">Open the path</a>`}
     </article>
+    ${theme ? `<article class="panel">
+      <p class="eyebrow">Theme · ${learnedIn(theme)} of ${theme.words.length} learned</p>
+      <h2 class="lesson-title">${esc(theme.title)}</h2><p class="muted" lang="tr">${esc(theme.tr)}</p>
+      <a class="btn" href="#theme/${theme.id}">${I.themes}<span>Practise words</span></a>
+    </article>` : ''}
   </div>
 
   <dl class="stats">
@@ -494,7 +502,7 @@ function pathView() {
     const open = isOpen(p, m);
     const done = isDone(p.id);
     const isNext = next?.id === p.id;
-    return `<li><a class="lrow${done ? ' done' : ''}${isNext ? ' next' : ''}${open ? '' : ' locked'}" href="${open ? p.href : '#path'}"${open ? '' : ` data-act="locked" data-level="${p.level}"`}>
+    return `<li><a class="lrow${done ? ' done' : ''}${isNext ? ' is-next' : ''}${open ? '' : ' locked'}" href="${open ? p.href : '#path'}"${open ? '' : ` data-act="locked" data-level="${p.level}"`}>
       <span class="lstate">${done ? I.check : open ? '' : I.lock}</span>
       <span class="ltext"><b>${esc(p.title)}</b><small>${esc(p.sub)}</small></span>
       <span class="tag k-${p.kind}">${KIND[p.kind]}</span>
@@ -1264,9 +1272,166 @@ function examResult() {
   drawLevelChip();
 }
 
+/* ---------- Themes ---------- */
+
+const wordN = (t, w) => store.state.words[wordKey(t, w)]?.n || 0;
+const learnedIn = (t) => t.words.filter((w) => wordN(t, w) >= NEED).length;
+const themeDone = (t) => learnedIn(t) === t.words.length;
+// Themes open one after the other, inside your rank and the ranks below it.
+const themeOpen = (t, m = me()) => rankIndex(t.rank) <= rankIndex(m.rank.id) && THEMES.slice(0, THEMES.indexOf(t)).every(themeDone);
+const currentTheme = (m = me()) => THEMES.find((t) => themeOpen(t, m) && !themeDone(t));
+const dotsHTML = (n) => `<span class="dots" role="img" aria-label="${n} of ${NEED}">${Array.from({ length: NEED }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('')}</span>`;
+
+function themesView() {
+  const m = me();
+  const cur = currentTheme(m);
+  view.innerHTML = `
+  <header class="page-head"><h1>Themes</h1><p class="lede">Ten words at a time. Tap the English to hear the Turkish, then switch sides and guess what the Turkish means. Get a word right ${NEED} times and it goes to your vocab. Finish a theme to open the next.</p></header>
+  ${cur ? `<a class="panel theme-now" href="#theme/${cur.id}">
+    <p class="eyebrow">Now · ${learnedIn(cur)} of ${cur.words.length} learned</p>
+    <h2 class="lesson-title">${esc(cur.title)}</h2>
+    <p class="muted" lang="tr">${esc(cur.tr)}</p>
+    <div class="meter"><span style="width:${(learnedIn(cur) / cur.words.length) * 100}%"></span></div>
+    <span class="btn primary">${I.arrow}<span>Practise</span></span>
+  </a>` : `<p class="note">Every ${esc(m.rank.id)} theme is done. New themes arrive with the next rank.</p>`}
+  <ol class="lessons">${THEMES.map((t, i) => {
+    const open = themeOpen(t, m);
+    const done = themeDone(t);
+    const n = learnedIn(t);
+    const prev = THEMES[i - 1];
+    return `<li><a class="lrow${done ? ' done' : ''}${cur?.id === t.id ? ' is-next' : ''}${open ? '' : ' locked'}" href="${open ? '#theme/' + t.id : '#themes'}"${open ? '' : ` data-act="tlocked" data-prev="${esc(prev?.title || '')}"`}>
+      <span class="lstate">${done ? I.check : open ? '' : I.lock}</span>
+      <span class="ltext"><b>${esc(t.title)}</b><small lang="tr">${esc(t.tr)}${open && !done ? ` · ${n} of ${t.words.length} learned` : ''}</small></span>
+      <span class="tag">${t.rank}</span>
+    </a></li>`;
+  }).join('')}</ol>
+  <p class="muted small">A2 themes (travel, health, the home in detail, opinions) open with rank D.</p>`;
+  local = { tlocked: (el) => toast(`Learn every word in ${el.dataset.prev} first. This theme opens right after.`) };
+}
+
+let themeUI = { id: null };
+
+function themeView(id) {
+  const t = themeById(id);
+  if (!t) { location.hash = '#themes'; return; }
+  if (!themeOpen(t)) { toast('Finish the themes before this one first.'); location.hash = '#themes'; return; }
+  if (themeUI.id !== id) themeUI = { id, mode: 'en', shown: new Set(), marks: new Map(), order: shuffle(t.words) };
+  xpFrom = t.rank;
+  drawTheme(t);
+}
+
+function drawTheme(t) {
+  const en = themeUI.mode === 'en';
+  const n = learnedIn(t);
+  view.innerHTML = `
+  <a class="backlink" href="#themes">${I.back}<span>Themes</span></a>
+  <header class="page-head"><p class="eyebrow">Theme · ${t.rank} · ${n} of ${t.words.length} learned</p><h1>${esc(t.title)}</h1><p class="lede" lang="tr">${esc(t.tr)}</p></header>
+  <div class="seg" role="tablist">
+    <button class="${en ? 'on' : ''}" data-act="tmode" data-m="en" role="tab" aria-selected="${en}">English → Turkish</button>
+    <button class="${en ? '' : 'on'}" data-act="tmode" data-m="tr" role="tab" aria-selected="${!en}">Turkish → English</button>
+  </div>
+  <p class="muted small">${en ? 'Tap a word to hear it in Turkish, and say it out loud after her.' : `Read the Turkish and say what it means. Then tap to check. Each word can score once per round.`}</p>
+  <ul class="wgrid">${themeUI.order.map((w) => {
+    const k = wordKey(t, w);
+    const c = wordN(t, w);
+    const shown = themeUI.shown.has(k);
+    const mark = themeUI.marks.get(k);
+    return `<li class="wcard${c >= NEED ? ' learned' : ''}${mark ? ' m-' + mark : ''}">
+      <button class="wface" data-act="${en ? 'tplay' : 'tguess'}" data-k="${esc(k)}">
+        <span class="wmain"${en ? '' : ' lang="tr"'}>${esc(en ? w.en : w.tr)}</span>
+        <span class="wsub"${en ? ' lang="tr"' : ''}${shown ? '' : ' hidden'}>${esc(en ? w.tr : w.en)}</span>
+      </button>
+      ${!en && shown && !mark ? `<div class="wjudge"><button class="btn small" data-act="tmark" data-k="${esc(k)}" data-ok="0">${I.x}<span>Missed</span></button><button class="btn small primary" data-act="tmark" data-k="${esc(k)}" data-ok="1">${I.check}<span>Knew it</span></button></div>` : ''}
+      <div class="wfoot">${dotsHTML(c)}${c >= NEED ? '<span class="tag on">In vocab</span>' : ''}</div>
+    </li>`;
+  }).join('')}</ul>
+  <div class="row-between theme-foot">
+    <span class="muted small">${n === t.words.length ? 'Theme complete.' : `${t.words.length - n} words to go.`}</span>
+    <button class="btn" data-act="tround">New round</button>
+  </div>
+  <div id="theme-end"></div>`;
+
+  const find = (k) => t.words.find((w) => wordKey(t, w) === k);
+  local = {
+    tmode: (el) => { themeUI.mode = el.dataset.m; themeUI.shown = new Set(); drawTheme(t); },
+    tround: () => { themeUI.shown = new Set(); themeUI.marks = new Map(); themeUI.order = shuffle(t.words); drawTheme(t); window.scrollTo(0, 0); },
+    tplay: (el) => {
+      const w = find(el.dataset.k);
+      themeUI.shown.add(el.dataset.k);
+      el.querySelector('.wsub').hidden = false;
+      S.speak(w.tr);
+    },
+    tguess: (el) => {
+      const k = el.dataset.k;
+      const w = find(k);
+      S.speak(w.tr);
+      if (themeUI.shown.has(k)) return;
+      themeUI.shown.add(k);
+      drawTheme(t);
+    },
+    tmark: (el) => {
+      const k = el.dataset.k;
+      if (themeUI.marks.has(k)) return;
+      const ok = el.dataset.ok === '1';
+      themeUI.marks.set(k, ok ? 'ok' : 'miss');
+      if (ok) {
+        const w = find(k);
+        const before = wordN(t, w);
+        const after = store.wordHit(k, NEED);
+        if (after > before) {
+          award(XP.word);
+          if (after === NEED) {
+            const kind = kindOf(w.tr);
+            const id = cardId(kind, w.tr);
+            if (!store.card(id)) store.putCard(srs.grade({ id, kind, tr: w.tr, en: w.en, src: 'theme:' + t.id, added: Date.now() }, 3));
+            award(XP.mastered);
+            toast(`${w.tr} is in your vocab.`);
+            if (themeDone(t)) themeComplete(t);
+          }
+        }
+      }
+      drawTheme(t);
+    },
+  };
+  if (themeDone(t) && n === t.words.length) $('#theme-end').innerHTML = themeEndHTML(t);
+}
+
+function themeComplete(t) {
+  award(XP.theme);
+}
+
+function themeEndHTML(t) {
+  const next = currentTheme();
+  return `<section class="done">
+    <p class="eyebrow">Theme complete</p><h2 class="lesson-title" lang="tr">Aferin!</h2>
+    <p class="lede">All ten ${esc(t.title.toLowerCase())} words are in your vocab, and they'll come back in review.${next ? ` Next theme: ${esc(next.title)}.` : ''}</p>
+    <div class="row">${next ? `<a class="btn primary" href="#theme/${next.id}">${I.arrow}<span>${esc(next.title)}</span></a>` : ''}<a class="btn" href="#themes">All themes</a></div>
+  </section>`;
+}
+
 /* ---------- Vocab ---------- */
 
-const vocabUI = { q: '', filter: 'all' };
+const vocabUI = { q: '', filter: 'all', rank: 'all', topic: 'all' };
+
+// Level and topic of a vocab card, from where it was learned.
+const cardLevel = (c) => cardRank(c) || 'A1';
+function topicOf(c) {
+  const src = c.src || '';
+  if (src.startsWith('theme:')) return themeById(src.slice(6))?.title || 'Themes';
+  const l = lessonById(src);
+  if (l) return l.unit.topic || l.unit.title;
+  if (drillById(src)) return 'Grammar';
+  if (dialogueById(src)) return 'Conversations';
+  if (storyById(src)) return 'Stories';
+  if (src === 'known') return 'Greetings';
+  if (src === 'mine') return 'Added by me';
+  return 'Other';
+}
+const TOPIC_ORDER = [...THEMES.map((t) => t.title)];
+const topicSort = (a, b) => {
+  const ia = TOPIC_ORDER.indexOf(a), ib = TOPIC_ORDER.indexOf(b);
+  return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+};
 
 function vocabView() {
   const cards = store.cards();
@@ -1276,8 +1441,18 @@ function vocabView() {
   <div class="searchbar">${I.search}<input id="vq" type="search" placeholder="Search Turkish or English" value="${esc(vocabUI.q)}" autocomplete="off" aria-label="Search vocab"></div>
   <div class="filters" role="tablist">${[['all', 'All'], ['phrase', 'Phrases'], ['word', 'Words'], ['weak', 'Weak'], ['mine', 'Added by me']].map(([k, t]) => `<button class="filter${vocabUI.filter === k ? ' on' : ''}" data-act="filter" data-f="${k}" role="tab" aria-selected="${vocabUI.filter === k}">${t}</button>`).join('')}</div>
   <ul class="vlist" id="vlist"></ul>`;
+  const all = store.cards();
+  const ranks = [...new Set(all.map(cardLevel))].sort((a, b) => rankIndex(a) - rankIndex(b));
+  const topics = [...new Set(all.map(topicOf))].sort(topicSort);
+  if (vocabUI.topic !== 'all' && !topics.includes(vocabUI.topic)) vocabUI.topic = 'all';
+  $('.filters', view).insertAdjacentHTML('afterend', `<div class="vselects">
+    <label class="sel"><span>Level</span><select id="vrank"><option value="all">All levels</option>${ranks.map((r) => `<option value="${r}"${vocabUI.rank === r ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
+    <label class="sel"><span>Topic</span><select id="vtopic"><option value="all">All topics</option>${topics.map((t) => `<option value="${esc(t)}"${vocabUI.topic === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+  </div>`);
   local = { filter: (el) => { vocabUI.filter = el.dataset.f; vocabView(); } };
   $('#vq').addEventListener('input', (e) => { vocabUI.q = e.target.value; drawVocabList(); });
+  $('#vrank').addEventListener('change', (e) => { vocabUI.rank = e.target.value; drawVocabList(); });
+  $('#vtopic').addEventListener('change', (e) => { vocabUI.topic = e.target.value; drawVocabList(); });
   drawVocabList();
 }
 
@@ -1290,6 +1465,8 @@ function drawVocabList() {
   if (vocabUI.filter === 'phrase' || vocabUI.filter === 'word') cards = cards.filter((c) => c.kind === vocabUI.filter);
   if (vocabUI.filter === 'weak') cards = cards.filter((c) => c.lapses > 0 || (c.s && srs.retrievability(c) < 0.85));
   if (vocabUI.filter === 'mine') cards = cards.filter((c) => c.src === 'mine');
+  if (vocabUI.rank !== 'all') cards = cards.filter((c) => cardLevel(c) === vocabUI.rank);
+  if (vocabUI.topic !== 'all') cards = cards.filter((c) => topicOf(c) === vocabUI.topic);
   if (q) cards = cards.filter((c) => P.trLower(c.tr).includes(q) || P.trLower(c.en).includes(q) || P.clean(c.tr).includes(P.clean(q)));
   cards.sort((a, b) => (b.added || 0) - (a.added || 0));
   if (!store.cards().length) {
@@ -1305,6 +1482,7 @@ function drawVocabList() {
         ${spell ? `<span class="vtr" lang="tr">${esc(c.tr)}</span>` : ''}
         <span class="vsay${spell ? '' : ' solo'}">${sayHTML(c.tr)}</span>
         <span class="ven">${esc(c.en)}</span>
+        <span class="vmeta">${cardLevel(c)} · ${esc(topicOf(c))}</span>
       </a>
       <span class="strength" title="Memory strength ${pct}%"><i style="width:${pct}%"></i></span>
     </li>`;
@@ -1363,7 +1541,7 @@ function detailView(tr, en, { card = null, note = '' } = {}) {
     save: () => {
       const t = fill(tr);
       const kind = kindOf(t);
-      const c = store.putCard({ id: cardId(kind, t), kind, tr: t, en: fill(en || ''), src: 'mine', added: Date.now(), due: Date.now() });
+      const c = store.putCard({ id: cardId(kind, t), kind, tr: t, en: fill(en || ''), src: 'mine', rank: me().rank.id, added: Date.now(), due: Date.now() });
       detailView(tr, en, { card: c, note });
     },
     del: (el) => {
@@ -1470,7 +1648,7 @@ function addCards(rows) {
     const kind = kindOf(r.tr);
     const id = cardId(kind, r.tr);
     if (store.card(id)) return;
-    store.putCard({ id, kind, tr: r.tr, en: r.en, src: 'mine', added: now + i, due: now });
+    store.putCard({ id, kind, tr: r.tr, en: r.en, src: 'mine', rank: me().rank.id, added: now + i, due: now });
     added++;
   });
   return added;
@@ -1719,8 +1897,8 @@ function settingsView() {
 
 /* ---------- router and shell ---------- */
 
-const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, drill: drillView, talk: talkView, story: storyView, exam: examView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, add: addView, settings: settingsView };
-const TAB_OF = { today: 'today', review: 'today', path: 'path', lesson: 'path', drill: 'path', talk: 'path', story: 'path', exam: 'path', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', settings: '' };
+const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, drill: drillView, talk: talkView, story: storyView, exam: examView, themes: themesView, theme: themeView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, add: addView, settings: settingsView };
+const TAB_OF = { today: 'today', review: 'today', path: 'path', lesson: 'path', drill: 'path', talk: 'path', story: 'path', exam: 'path', themes: 'themes', theme: 'themes', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', settings: '' };
 const SESSIONS = new Set(['lesson', 'review', 'drill']);
 const FOCUS = new Set(['lesson', 'review', 'drill', 'talk', 'story', 'exam']);
 let cleanup = null;
@@ -1747,7 +1925,7 @@ function render() {
 }
 
 function shell() {
-  $('#tabs').innerHTML = [['today', 'Today', I.today], ['path', 'Path', I.path], ['vocab', 'Vocab', I.vocab], ['pronounce', 'Pronounce', I.pron]]
+  $('#tabs').innerHTML = [['today', 'Today', I.today], ['path', 'Path', I.path], ['themes', 'Themes', I.themes], ['vocab', 'Vocab', I.vocab], ['pronounce', 'Pronounce', I.pron]]
     .map(([k, t, ic]) => `<a href="#${k}" data-tab="${k}">${ic}<span>${t}</span></a>`).join('');
   $('#settings-link').innerHTML = I.sliders;
   drawLevelChip();
@@ -1763,7 +1941,7 @@ function shell() {
 let redrawTimer = null;
 store.subscribe((kind) => {
   if (kind === 'meta' || kind === 'all') { S.setVoice(settings().voiceURI, settings().rate); S.setRecordedVoice(settings().recordedVoice); drawLevelChip(); }
-  if (!['today', 'path'].includes(current) && !(current === 'vocab' && kind !== 'meta')) return;
+  if (!['today', 'path', 'themes'].includes(current) && !(current === 'vocab' && kind !== 'meta')) return;
   clearTimeout(redrawTimer);
   redrawTimer = setTimeout(() => {
     if (current === 'vocab') drawVocabList();

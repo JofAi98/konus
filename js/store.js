@@ -6,6 +6,7 @@ const blank = () => ({
   v: 1,
   cards: {},
   progress: {},
+  words: {},
   stats: { days: {} },
   settings: { name: 'Giosuè', showSpelling: true, recordedVoice: 'emel', voiceURI: '', rate: 0.9, settingsAt: 0 },
   metaAt: 0,
@@ -67,6 +68,15 @@ export const store = {
     state.seeded = true;
     persist();
   },
+  // One right guess for a theme word; returns its new count.
+  wordHit(key, max) {
+    const w = state.words[key] || { n: 0 };
+    if (w.n >= max) return w.n;
+    state.words[key] = { n: w.n + 1, at: Date.now() };
+    state.metaAt = Date.now();
+    changed('meta', null, false);
+    return w.n + 1;
+  },
   markLesson(id) {
     if (!state.progress[id]) state.progress[id] = { at: Date.now() };
     state.metaAt = Date.now();
@@ -91,6 +101,9 @@ export const store = {
     for (const [id, v] of Object.entries(remote.progress || {})) {
       if (!state.progress[id] || v.at < state.progress[id].at) state.progress[id] = v;
     }
+    for (const [k, v] of Object.entries(remote.words || {})) {
+      if (!state.words[k] || v.n > state.words[k].n) state.words[k] = v;
+    }
     for (const [day, v] of Object.entries(remote.stats?.days || {})) {
       const mine = state.stats.days[day] || (state.stats.days[day] = {});
       for (const [k, n] of Object.entries(v)) mine[k] = Math.max(mine[k] || 0, n);
@@ -103,7 +116,7 @@ export const store = {
   },
   metaForSync() {
     const { name, showSpelling, recordedVoice, settingsAt } = state.settings;
-    return { progress: state.progress, stats: state.stats, settings: { name, showSpelling, recordedVoice, settingsAt }, updatedAt: Date.now() };
+    return { progress: state.progress, words: state.words, stats: state.stats, settings: { name, showSpelling, recordedVoice, settingsAt }, updatedAt: Date.now() };
   },
 
   replaceAll(next) {

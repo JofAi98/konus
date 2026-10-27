@@ -11,6 +11,7 @@ import { STORIES } from './stories.js';
 export const XP = {
   lesson: 30, drill: 30, dialogue: 25, story: 20, again: 10,
   review: 2, spoken: 1, clear: 1, answer: 2, listen: 5, daily: 10, exam: 100,
+  word: 2, mastered: 5, theme: 20,
 };
 export const DAILY_GOAL = 100;
 

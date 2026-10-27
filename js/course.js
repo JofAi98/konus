@@ -45,7 +45,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u1', level: 1, title: 'Hello', blurb: 'The first things you will say to her, and to everyone she knows.',
+    id: 'u1', topic: 'Greetings', level: 1, title: 'Hello', blurb: 'The first things you will say to her, and to everyone she knows.',
     lessons: [
       { id: 'u1l1', title: 'Hello, how are you?', goal: 'Start any conversation', items: [
         p('Merhaba!', 'Hello!', 'merhaba=hello', 'Works any time, with anyone.'),
@@ -107,7 +107,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u3', level: 3, title: 'At her family\'s table', blurb: 'Meeting her parents, eating together, and the small phrases that make a Turkish mother happy.',
+    id: 'u3', topic: 'Family', level: 3, title: 'At her family\'s table', blurb: 'Meeting her parents, eating together, and the small phrases that make a Turkish mother happy.',
     lessons: [
       { id: 'u3l1', title: 'Meeting her family', goal: 'Arrive and say the right thing', items: [
         p('Hoş geldiniz!', 'Welcome!', 'hoş=nice; geldiniz=you came', 'What the hosts say when you arrive.'),
@@ -137,7 +137,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u4', level: 4, title: 'Love', blurb: 'The words for her.',
+    id: 'u4', topic: 'Love', level: 4, title: 'Love', blurb: 'The words for her.',
     lessons: [
       { id: 'u4l1', title: 'Sweet words', goal: 'Say what you feel', items: [
         p('Seni seviyorum.', 'I love you.', 'seni=you (as object)'),
@@ -206,7 +206,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u7', level: 10, title: 'Numbers', blurb: 'Counting, prices and the time.',
+    id: 'u7', topic: 'Numbers and time', level: 10, title: 'Numbers', blurb: 'Counting, prices and the time.',
     lessons: [
       { id: 'u7l1', title: 'One to five', goal: 'Count to five', items: [
         p('bir', 'one'), p('iki', 'two'), p('üç', 'three'), p('dört', 'four'), p('beş', 'five'),
@@ -233,7 +233,7 @@ export const UNITS = [
     ],
   },
   {
-    id: 'u8', level: 12, title: 'Out and about', blurb: 'Cafés, shops and finding your way.',
+    id: 'u8', topic: 'City', level: 12, title: 'Out and about', blurb: 'Cafés, shops and finding your way.',
     lessons: [
       { id: 'u8l1', title: 'Café and shops', goal: 'Order, ask the price, pay', items: [
         p('Bir çay, lütfen.', 'A tea, please.'),
