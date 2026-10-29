@@ -33,7 +33,9 @@ export async function init() {
     ]);
     A = authMod; F = fsMod;
     const app = appMod.initializeApp(firebaseConfig);
-    auth = A.getAuth(app);
+    // Same storage as getAuth, without the pop-up sign-in helper: it loads a Google script
+    // the page's Content Security Policy blocks, and email sign-in doesn't need it.
+    auth = A.initializeAuth(app, { persistence: [A.indexedDBLocalPersistence, A.browserLocalPersistence] });
     fdb = F.getFirestore(app);
     A.onAuthStateChanged(auth, async (u) => {
       if (u && !isOwner(u)) {

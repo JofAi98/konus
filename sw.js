@@ -1,6 +1,6 @@
 // Network first, so every app update arrives the next time you open it.
 // The cached copy keeps the app working offline.
-const CACHE = 'konus-v11';
+const CACHE = 'konus-v12';
 const FIREBASE = 'konus-firebase-10.12.2'; // the sign-in code, kept so the app opens offline
 const ASSETS = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/course.js', 'js/pron.js', 'js/speech.js', 'js/srs.js', 'js/store.js', 'js/sync.js', 'js/firebase-config.js', 'js/voices.js', 'js/levels.js', 'js/drills.js', 'js/dialogues.js', 'js/stories.js', 'js/themes.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

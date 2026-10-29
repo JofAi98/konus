@@ -40,6 +40,22 @@ function changed(kind, payload, remote) {
 }
 
 export const dayKey = (t = Date.now()) => new Date(t).toLocaleDateString('en-CA');
+
+// Weekly streak: a day counts once you earn DAY_XP in it, a week once WEEK_GOAL of its days count.
+export const WEEK_GOAL = 3;
+export const DAY_XP = 30;
+// Days from before XP existed count if anything was practised on them.
+const dayXP = (d) => (!d ? 0 : d.xp ?? (Object.values(d).some((n) => n > 0) ? DAY_XP : 0));
+const monday = (t = Date.now()) => {
+  const d = new Date(t);
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+};
+export const weekDays = (t) => {
+  const m = monday(t);
+  return Array.from({ length: 7 }, (_, i) => { const d = new Date(m); d.setDate(m.getDate() + i); return dayKey(d); });
+};
 export const cardId = (kind, tr) => `${kind === 'word' ? 'w' : 'p'}:${String(tr).split(/\s+/).map(clean).filter(Boolean).join('_')}`;
 
 export const store = {
@@ -131,14 +147,23 @@ export const store = {
     changed('all', null, false);
   },
 
-  streak() {
-    const days = state.stats.days;
-    const active = (k) => days[k] && Object.values(days[k]).some((n) => n > 0);
-    let t = Date.now();
-    if (!active(dayKey(t))) t -= 864e5;
-    let n = 0;
-    while (active(dayKey(t))) { n++; t -= 864e5; }
-    return n;
+  // This week, Monday to Sunday: each day's XP and whether it counts.
+  week(t = Date.now()) {
+    const today = dayKey();
+    const days = weekDays(t).map((k) => ({ k, xp: dayXP(state.stats.days[k]), today: k === today, future: k > today }));
+    days.forEach((d) => { d.on = d.xp >= DAY_XP; });
+    return { days, count: days.filter((d) => d.on).length };
+  },
+  // Weeks in a row with at least WEEK_GOAL practice days. This week joins once it reaches
+  // the goal; until Sunday is over it can't break the streak.
+  weekStreak() {
+    const m = monday();
+    let n = this.week(m).count >= WEEK_GOAL ? 1 : 0;
+    for (;;) {
+      m.setDate(m.getDate() - 7);
+      if (this.week(m).count < WEEK_GOAL) return n;
+      n++;
+    }
   },
 };
 

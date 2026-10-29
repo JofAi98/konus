@@ -2,7 +2,7 @@ import { UNITS, LESSONS, lessonById, COURSE_WORDS } from './course.js';
 import * as P from './pron.js';
 import * as S from './speech.js';
 import * as srs from './srs.js';
-import { store, cardId, saveRecording, getRecording, dayKey } from './store.js';
+import { store, cardId, saveRecording, getRecording, dayKey, WEEK_GOAL, DAY_XP } from './store.js';
 import * as sync from './sync.js';
 import { VOICES, SAMPLES } from './voices.js';
 import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, XP_PER_LEVEL, levelInfo, xpToReach, rankOf, rankIndex, isOpen, featureOpen, unlocksAt } from './levels.js';
@@ -193,13 +193,59 @@ function award(n, from = xpFrom) {
     return;
   }
   const before = m.level;
+  const wk = store.week();
+  const todayOn = wk.days.find((d) => d.today).on;
   if (!store.state.stats.days[dayKey()]?.xp) n += XP.daily; // first practice of the day
   store.log('xp', n);
   if (m.rank.id !== 'A1') store.log('xp_' + m.rank.id, n);
   xpPop(`+${n} XP`);
   const after = me().level;
   if (after > before) levelUp(before, after);
+  else if (!todayOn && store.week().days.find((d) => d.today).on) {
+    if (wk.count + 1 === WEEK_GOAL) weekDone();
+    else if (wk.count + 1 < WEEK_GOAL) setTimeout(() => xpPop(`Day ${wk.count + 1} of ${WEEK_GOAL} this week`), 1600);
+  }
   drawLevelChip();
+}
+
+function weeksText(n) { return `${n} ${n === 1 ? 'week' : 'weeks'}`; }
+
+function weekDone() {
+  const n = store.weekStreak();
+  document.querySelector('.levelup:not(.rankup)')?.remove();
+  const el = document.createElement('div');
+  el.className = 'levelup';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'wd-title');
+  el.innerHTML = `<div class="lu-card">
+    <p class="eyebrow">Week done · <span lang="tr">Aferin!</span></p>
+    <h2 id="wd-title" class="lu-num wd-num">${weeksText(n)}</h2>
+    <p class="muted">${n === 1 ? `Three practice days this week. Do the same next week and the streak grows.` : `${n} weeks in a row with at least ${WEEK_GOAL} practice days.`} Anything more this week is extra.</p>
+    <button class="btn primary">Continue</button>
+  </div>`;
+  el.querySelector('button').addEventListener('click', () => el.remove());
+  document.body.append(el);
+  el.querySelector('button').focus();
+}
+
+// This week's practice days, Monday to Sunday, for the Today card.
+function weekHTML() {
+  const wk = store.week();
+  const streak = store.weekStreak();
+  const today = wk.days.find((d) => d.today);
+  const need = WEEK_GOAL - wk.count;
+  const left = wk.days.filter((d) => d.future || (d.today && !d.on)).length;
+  const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const msg = need <= 0 ? `Week done. Streak: ${weeksText(streak)}.`
+    : need > left ? `Not enough days left for ${WEEK_GOAL} this week. A new streak starts on Monday.`
+    : `Practise ${need} more ${need === 1 ? 'day' : 'days'} this week to ${streak ? `keep your ${weeksText(streak)} streak` : 'start a streak'}.${today.on ? '' : ` Today counts at ${DAY_XP} XP (${today.xp} so far).`}`;
+  return `<div class="week">
+      <span class="eyebrow">This week</span>
+      <ol class="wdays" aria-label="Practice days this week">${wk.days.map((d, i) => `<li class="${d.on ? 'on' : ''}${d.today ? ' today' : ''}${d.future ? ' future' : ''}" title="${names[i]}: ${d.on ? 'practised' : d.future ? 'still to come' : `${d.xp} of ${DAY_XP} XP`}"><span aria-hidden="true">${names[i][0]}</span><span class="sr">${names[i]}${d.on ? ', practised' : ''}</span></li>`).join('')}</ol>
+      <span class="goal-num">${Math.min(wk.count, WEEK_GOAL)} / ${WEEK_GOAL} days</span>
+    </div>
+    <p class="small week-msg${need <= 0 ? ' done' : ''}">${msg}</p>`;
 }
 
 function xpPop(text) {
@@ -266,6 +312,7 @@ function levelCardHTML(m = me()) {
       <div class="meter amber" role="progressbar" aria-label="Daily goal" aria-valuemin="0" aria-valuemax="${DAILY_GOAL}" aria-valuenow="${Math.min(today, DAILY_GOAL)}"><span style="width:${Math.min(100, (today / DAILY_GOAL) * 100)}%"></span></div>
       <span class="goal-num">${today} / ${DAILY_GOAL} XP</span>
     </div>
+    ${weekHTML()}
     ${nx ? `<p class="small next-unlock">Level ${nx.level} opens ${esc(nx.items.map((i) => i.title).join(', '))}.</p>` : ''}
     ${h.id === 'F' ? `<div class="tutorial">
       <p class="eyebrow">Tutorial · ${h.tutorialDone} of ${TUTORIAL.length} · finish it to reach rank E</p>
@@ -428,7 +475,7 @@ function todayView() {
   const next = nextUp(m);
   const nx = nextUnlock(m);
   const upcoming = cards.filter((c) => c.due && !srs.isDue(c)).sort((a, b) => a.due - b.due)[0];
-  const streak = store.streak();
+  const streak = store.weekStreak();
   const pool = LESSONS.filter((l) => isOpen(pathItem(l.id), m)).flatMap((l) => l.items).filter((it) => P.tokens(it.tr).length > 1);
   const dayNo = Math.floor(Date.now() / 864e5);
   const potd = pool[dayNo % pool.length];
@@ -467,7 +514,7 @@ function todayView() {
   </div>
 
   <dl class="stats">
-    <div><dt>Day streak</dt><dd>${streak}</dd></div>
+    <div><dt>Week streak</dt><dd>${streak}</dd></div>
     <div><dt>Phrases</dt><dd>${cards.filter((c) => c.kind === 'phrase').length}</dd></div>
     <div><dt>Words</dt><dd>${cards.filter((c) => c.kind === 'word').length}</dd></div>
     <div><dt>Done</dt><dd>${PATH.filter((p) => isDone(p.id)).length}/${PATH.length}</dd></div>
@@ -526,6 +573,7 @@ function pathView() {
 
   <details class="howto levels-help"><summary>How levels work</summary>
     <p><b>XP.</b> A lesson or Build drill earns ${XP.lesson}, a dialogue ${XP.dialogue}, a story ${XP.story}, each review ${XP.review}, and each sentence you say out loud ${XP.spoken} (${XP.spoken + XP.clear} when it comes through clearly). Your first practice each day adds ${XP.daily}. Doing something again earns ${XP.again}.</p>
+    <p><b>Weekly streak.</b> A day counts once you earn ${DAY_XP} XP in it, about one lesson or a short review. A week, Monday to Sunday, counts once ${WEEK_GOAL} of its days do. Your streak is how many weeks in a row you've managed it. Missing a day doesn't matter; missing a week starts it again.</p>
     <p><b>XP comes from your rank.</b> Only practice at your own rank counts. While you're A1, A1 phrases earn XP; once you're B1, it takes B1 phrases to earn the same XP. Older material stays open for practice, without XP.</p>
     <p><b>Levels.</b> Every level costs the same ${XP_PER_LEVEL} XP. About ${DAILY_GOAL} XP a day, 15 to 20 minutes, reaches level 20 in a month. Each rank has 30 levels: A1 is 1 to 30, A2 is 31 to 60, and so on. The last level of a rank is its cap. Reaching it means you've done that rank's work, and its exam opens.</p>
     <p><b>Ranks.</b> Ranks follow the European levels: A1, A2, B1, B2, C1, C2. In A1, levels open lessons, drills, dialogues and stories step by step. The A1 exam opens at level 30: 20 questions of listening, speaking and conversation. Score 80% to reach A2, which opens all A2 grammar, vocabulary, dialogues and stories at once. If you don't pass, it shows what to revise; try again the next day.</p>
