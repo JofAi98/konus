@@ -85,6 +85,8 @@ body.focus main { padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
 .note { padding: 12px 14px; background: var(--sunk); border-radius: var(--r-s); color: var(--ink-2); font-size: 15px; max-width: 60ch; }
 
 /* Buttons */
+/* No double-tap zoom: two quick taps (Say it, then stop) are two taps, not a zoom. */
+button, a, label, [data-act] { touch-action: manipulation; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 9px 16px; border-radius: var(--r-s); border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 500; font-size: 15px; cursor: pointer; transition: background 150ms, transform 120ms; text-decoration: none; }
 .btn svg { width: 18px; height: 18px; flex: none; }
 .btn:hover { background: var(--sunk); }
@@ -246,7 +248,7 @@ input[type="range"] { width: 100%; accent-color: var(--cobalt); }
 .vinfo small { color: var(--muted); font-size: 13px; line-height: 1.4; }
 .tag.on { background: var(--cobalt); color: var(--surface); }
 .play-mini.busy { color: var(--cobalt); border-color: var(--cobalt); }
-.toast { position: fixed; z-index: 20; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: min(520px, calc(100% - 32px)); padding: 12px 16px; border-radius: var(--r); background: var(--btn); color: var(--btn-ink); font-size: 14px; line-height: 1.45; }
+.toast { position: fixed; z-index: 20; pointer-events: none; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: min(520px, calc(100% - 32px)); padding: 12px 16px; border-radius: var(--r); background: var(--btn); color: var(--btn-ink); font-size: 14px; line-height: 1.45; }
 
 /* Levels and ranks */
 .lvl { font: 500 12px/1 var(--f-mono); color: var(--ink-2); padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }

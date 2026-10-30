@@ -355,7 +355,20 @@ const nextButtonHTML = () => {
 /* ---------- speaking: check, record, compare ---------- */
 
 let listeningBtn = null;
-let recorder = null;
+let recorder = null; // { r, el, panel } while recording
+let recStarting = false;
+
+// Stop the recording in progress (if any) and keep it with the phrase it belongs to.
+async function stopRecording({ keep = true } = {}) {
+  if (!recorder) return;
+  const { r, el, panel } = recorder;
+  recorder = null;
+  el.classList.remove('live'); $('span', el).textContent = 'Record';
+  const blob = await r.stop();
+  if (!keep || !blob.size) return;
+  await saveRecording(panel.dataset.key, blob);
+  if (panel.isConnected) showMine(panel, blob);
+}
 
 const MIC_ERRORS = {
   'not-allowed': 'Microphone access is blocked. Allow it for this site in the browser (the icon next to the address), then try again.',
@@ -384,6 +397,8 @@ function resultHTML(res) {
 
 const globalActions = {
   play: async (el) => {
+    S.cancelListening();
+    await stopRecording();
     el.classList.add('busy');
     await S.speak(fill(el.dataset.text), { slow: el.dataset.slow === '1' });
     el.classList.remove('busy');
@@ -399,15 +414,17 @@ const globalActions = {
     const panel = el.closest('.speak');
     const box = $('.result', panel);
     const label = $('span', el);
-    if (listeningBtn) { S.stopListening(); return; }
+    if (listeningBtn === el) { S.stopListening(); return; }
     if (!S.canListen()) { box.innerHTML = `<p class="notice">${MIC_ERRORS.unsupported}</p>`; return; }
     S.stopSpeaking();
+    await stopRecording();
     listeningBtn = el;
     el.classList.add('live');
     label.textContent = 'Listening. Tap to stop';
     box.innerHTML = '<p class="interim">Speak now</p>';
     try {
       const alts = await S.listen({ onInterim: (t) => { const p = $('.interim', box); if (p) p.textContent = t; } });
+      if (listeningBtn !== el || !panel.isConnected) return; // another check took over, or the page changed
       if (!alts.length) {
         box.innerHTML = '<p class="notice">Nothing came through. Tap Say it and speak a little louder.</p>';
       } else {
@@ -418,31 +435,31 @@ const globalActions = {
         panel.dispatchEvent(new CustomEvent('checked', { detail: res, bubbles: true }));
       }
     } catch (err) {
-      box.innerHTML = `<p class="notice">${esc(MIC_ERRORS[err.message] || 'Speech checking stopped: ' + err.message)}</p>`;
+      if (listeningBtn === el) box.innerHTML = `<p class="notice">${esc(MIC_ERRORS[err.message] || 'Speech checking stopped: ' + err.message)}</p>`;
     } finally {
-      listeningBtn = null;
+      if (listeningBtn === el) listeningBtn = null;
       el.classList.remove('live');
       label.textContent = 'Say it';
     }
   },
   async rec(el) {
     const panel = el.closest('.speak');
-    const label = $('span', el);
-    if (recorder) {
-      const r = recorder; recorder = null;
-      const blob = await r.stop();
-      el.classList.remove('live'); label.textContent = 'Record';
-      await saveRecording(panel.dataset.key, blob);
-      showMine(panel, blob);
-      return;
-    }
+    if (recorder?.el === el) { await stopRecording(); return; }
+    if (recStarting) return; // still waiting for the microphone from the last tap
     if (!S.canRecord()) { $('.result', panel).innerHTML = `<p class="notice">${MIC_ERRORS.unsupported}</p>`; return; }
+    await stopRecording();
+    S.cancelListening();
+    S.stopSpeaking();
+    recStarting = true;
     try {
-      S.stopSpeaking();
-      recorder = await S.startRecording();
-      el.classList.add('live'); label.textContent = 'Stop';
+      const r = await S.startRecording();
+      if (!el.isConnected) { r.stop(); return; }
+      recorder = { r, el, panel };
+      el.classList.add('live'); $('span', el).textContent = 'Stop';
     } catch {
       $('.result', panel).innerHTML = `<p class="notice">${MIC_ERRORS['not-allowed']}</p>`;
+    } finally {
+      recStarting = false;
     }
   },
   playmine: (el) => { const p = el.closest('.speak'); if (p._blob) S.playBlob(p._blob); },
@@ -785,7 +802,9 @@ function gradeStep(g) {
 }
 
 function advance() {
-  S.stopListening();
+  S.cancelListening();
+  listeningBtn = null;
+  stopRecording();
   S.stopSpeaking();
   session.i++;
   if (session.i >= session.steps.length) finish();
@@ -2054,8 +2073,9 @@ function render() {
   xpFrom = null;
   belowNoted = false;
   document.querySelector('.levelup')?.remove();
-  S.stopListening();
-  if (recorder) { recorder.stop(); recorder = null; }
+  S.cancelListening();
+  listeningBtn = null;
+  stopRecording({ keep: false });
   S.stopSpeaking();
   current = route;
   document.body.classList.toggle('focus', FOCUS.has(route));

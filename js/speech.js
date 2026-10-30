@@ -40,6 +40,8 @@ function playFile(voice, text, slow, fast = false) {
     stopSpeaking();
     const a = new Audio(`audio/${voice}/${h}.mp3`);
     player = a;
+    // pause() fires no "ended", so stopSpeaking() settles the promise through this.
+    a._done = resolve;
     a.preservesPitch = true;
     a.playbackRate = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : fast ? 1.2 : 1) * (rate / 0.9)));
     a.onended = () => resolve();
@@ -58,8 +60,14 @@ export async function playVoice(voice, text, { slow = false } = {}) {
   return playFile(voice, text, slow) || deviceSpeak(text, { slow });
 }
 
+function stopPlayer() {
+  if (!player) return;
+  const a = player; player = null;
+  a.pause(); a._done?.();
+}
+
 export function stopSpeaking() {
-  if (player) { player.pause(); player = null; }
+  stopPlayer();
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
@@ -128,7 +136,7 @@ export function speak(text, { slow = false, fast = false } = {}) {
 }
 
 function deviceSpeak(text, { slow = false, fast = false } = {}) {
-  if (player) { player.pause(); player = null; }
+  stopPlayer();
   return new Promise((resolve) => {
     if (!canSpeak() || !text) return resolve();
     const go = () => {
@@ -138,8 +146,11 @@ function deviceSpeak(text, { slow = false, fast = false } = {}) {
       const v = pickVoice();
       if (v) u.voice = v;
       u.rate = slow ? Math.max(0.45, rate * 0.62) : fast ? rate * 1.2 : rate;
-      u.onend = () => { if (current === u) current = null; resolve(); };
+      // Safari sometimes never fires "end", which left buttons waiting forever.
+      const guard = setTimeout(() => { if (current === u) current = null; resolve(); }, 3000 + (text.length * 160) / u.rate);
+      u.onend = () => { clearTimeout(guard); if (current === u) current = null; resolve(); };
       u.onerror = (e) => {
+        clearTimeout(guard);
         if (current === u) current = null;
         if (e.error !== 'interrupted' && e.error !== 'canceled') window.dispatchEvent(new CustomEvent('speech-error', { detail: e.error }));
         resolve();
@@ -158,33 +169,73 @@ function deviceSpeak(text, { slow = false, fast = false } = {}) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const canListen = () => !!SR;
 
-let active = null;
+let active = null; // { rec, finish } for the recognition in progress
+
+// iPhone: the page is set to media playback so audio ignores the silent switch,
+// and that session type can't record. Switch it while the microphone is in use.
+let micUsers = 0;
+let sessionBefore = '';
+export function micOn() {
+  try {
+    if (!micUsers++ && navigator.audioSession) { sessionBefore = navigator.audioSession.type; navigator.audioSession.type = 'play-and-record'; }
+  } catch { /* older Safari */ }
+}
+export function micOff() {
+  if (!micUsers || --micUsers) return;
+  try { if (navigator.audioSession && sessionBefore) navigator.audioSession.type = sessionBefore; } catch { /* older Safari */ }
+}
 
 export function listen({ onInterim } = {}) {
   if (!SR) return Promise.reject(new Error('unsupported'));
-  if (active) { try { active.abort(); } catch { /* already stopped */ } }
+  if (active) active.finish([]);
   return new Promise((resolve, reject) => {
     const rec = new SR();
-    active = rec;
     rec.lang = 'tr-TR';
     rec.interimResults = true;
     rec.maxAlternatives = 5;
     rec.continuous = false;
     let finals = [];
+    let latest = '';
+    let done = false;
+    let cap = 0;
+    let watchdog = 0;
+    // Settle exactly once, whichever comes first: the browser's own end, an error,
+    // a stop that the browser never confirms, or the time limit.
+    const finish = (value, err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(cap); clearTimeout(watchdog);
+      if (active?.rec === rec) active = null;
+      micOff();
+      try { rec.abort(); } catch { /* already stopped */ }
+      if (err) reject(err); else resolve(value);
+    };
+    const results = () => (finals.length ? finals : latest ? [{ text: latest, conf: 0 }] : []);
     rec.onresult = (e) => {
       const res = e.results[e.results.length - 1];
       if (res.isFinal) {
         finals = [];
         for (let i = 0; i < res.length; i++) finals.push({ text: res[i].transcript, conf: res[i].confidence });
-      } else if (onInterim) onInterim(res[0].transcript);
+      } else {
+        latest = res[0].transcript;
+        onInterim?.(latest);
+      }
     };
-    rec.onerror = (e) => { active = null; if (e.error === 'no-speech' || e.error === 'aborted') resolve([]); else reject(new Error(e.error)); };
-    rec.onend = () => { active = null; resolve(finals); };
-    try { rec.start(); } catch (err) { active = null; reject(err); }
+    rec.onerror = (e) => { if (e.error === 'no-speech' || e.error === 'aborted') finish(results()); else finish(null, new Error(e.error)); };
+    rec.onend = () => finish(results());
+    const stop = () => {
+      try { rec.stop(); } catch { /* already stopped */ }
+      watchdog = setTimeout(() => finish(results()), 1500);
+    };
+    active = { rec, finish, stop };
+    micOn();
+    cap = setTimeout(stop, 15000);
+    try { rec.start(); } catch (err) { finish(null, err); }
   });
 }
 
-export function stopListening() { if (active) { try { active.stop(); } catch { /* already stopped */ } } }
+export function stopListening() { active?.stop(); }
+export function cancelListening() { active?.finish([]); }
 
 /* ---------- Comparing what it heard with what you meant ---------- */
 
@@ -288,15 +339,29 @@ export const suggestGrade = (score) => (score >= 0.95 ? 3 : score >= 0.75 ? 2 : 
 export const canRecord = () => !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
 export async function startRecording() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  micOn();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) { micOff(); throw err; }
   const mr = new MediaRecorder(stream);
   const chunks = [];
   mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
   mr.start();
+  let stopping = null;
   return {
-    stop: () => new Promise((resolve) => {
-      mr.onstop = () => { stream.getTracks().forEach((t) => t.stop()); resolve(new Blob(chunks, { type: mr.mimeType || 'audio/webm' })); };
-      mr.stop();
+    stop: () => stopping ||= new Promise((resolve) => {
+      let done = false;
+      const end = () => {
+        if (done) return;
+        done = true;
+        stream.getTracks().forEach((t) => t.stop());
+        micOff();
+        resolve(new Blob(chunks, { type: mr.mimeType || 'audio/webm' }));
+      };
+      mr.onstop = () => setTimeout(end); // the last chunk arrives just before "stop"
+      setTimeout(end, 1500); // some browsers never fire "stop" when the mic was cut off
+      try { if (mr.state !== 'inactive') mr.stop(); else end(); } catch { end(); }
     }),
   };
 }
