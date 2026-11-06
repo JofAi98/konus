@@ -198,6 +198,18 @@ button, a, label, [data-act] { touch-action: manipulation; }
 .strength { flex: none; width: 44px; height: 4px; border-radius: 2px; background: var(--sunk); overflow: hidden; }
 .strength i { display: block; height: 100%; background: var(--good); }
 .empty { padding: 28px 0; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; color: var(--muted); }
+.wtr mark { background: var(--amber-soft); color: var(--amber); border-radius: 3px; padding: 0 1px; }
+.ltitle { font: 500 clamp(2rem, 8vw, 2.6rem)/1.15 var(--f-display); letter-spacing: -0.02em; }
+.ltiles { display: flex; flex-wrap: wrap; gap: 16px; }
+.lword { display: flex; flex-wrap: wrap; gap: 8px; }
+.lsyl { display: flex; gap: 3px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-s); }
+.lsyl.st { border-color: var(--amber); background: var(--amber-soft); }
+.ltile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 44px; min-height: 58px; padding: 4px 6px; border: 1px solid transparent; border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.ltile > span { font: 500 1.35rem/1 var(--f-display); }
+.ltile small { font: 12px var(--f-mono); color: var(--muted); }
+.ltile.watch > span { color: var(--cobalt); }
+.ltile.on { border-color: var(--cobalt); background: var(--cobalt-soft); }
+.ltip { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 12px 14px; background: var(--sunk); border-radius: var(--r-s); }
 .wlist a { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--ink); }
 .wtr { font: 500 1.05rem var(--f-display); }
 .wsay { font: 13px var(--f-mono); color: var(--ink-2); text-align: right; }
@@ -415,17 +427,15 @@ input[type="range"] { width: 100%; accent-color: var(--cobalt); }
 .wmain { font: 500 1.2rem/1.25 var(--f-display); }
 .wsub { font-size: 15px; color: var(--cobalt); }
 .wsub[lang="tr"] { font: 500 1.1rem/1.25 var(--f-display); }
-.wjudge { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.wjudge .btn { padding: 6px 8px; gap: 4px; font-size: 13px; }
-.wjudge .btn svg { width: 14px; height: 14px; }
+.wask { font-size: 14px; color: var(--muted); }
+.wface.live { color: var(--bad); animation: none; }
+.wface.live .wask { color: var(--bad); }
+.wtry { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.wtry .linkbtn { display: inline-flex; align-items: center; gap: 6px; font: 500 1.1rem/1.25 var(--f-display); }
+.wtry .linkbtn svg { width: 16px; height: 16px; }
 .wfoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
-.dots { display: inline-flex; gap: 4px; }
-.dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--sunk); border: 1px solid var(--line); }
-.dots i.on { background: var(--good); border-color: var(--good); }
 .wcard.m-ok { border-color: var(--good); background: var(--good-soft); }
 .wcard.m-miss { border-color: var(--bad); background: var(--bad-soft); }
-.wcard.learned .wmain { color: var(--ink-2); }
-.theme-foot { align-items: center; flex-direction: row !important; }
 
 /* Vocab filters */
 .vselects { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

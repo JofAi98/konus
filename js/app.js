@@ -379,6 +379,24 @@ const MIC_ERRORS = {
   unsupported: 'This browser cannot check speech. Chrome, Edge and Safari can. You can still say it out loud and compare by ear.',
 };
 
+const nothingHeard = () => `Nothing came through. Tap and speak a little louder. <small class="muted">(${esc(S.listenEnd())})</small>`;
+const micError = (err) => esc(MIC_ERRORS[err.message] || 'Speech checking stopped: ' + err.message);
+
+// Listen on behalf of a button. Null means this check was replaced or the page changed.
+async function micListen(el, onInterim) {
+  S.stopSpeaking();
+  await stopRecording();
+  listeningBtn = el;
+  el.classList.add('live');
+  try {
+    const alts = await S.listen({ onInterim });
+    return listeningBtn === el && el.isConnected ? alts : null;
+  } finally {
+    if (listeningBtn === el) listeningBtn = null;
+    el.classList.remove('live');
+  }
+}
+
 function resultHTML(res) {
   const pct = Math.round(res.score * 100);
   const verdict = pct >= 95 ? 'Clear. A Turkish ear understood every word.' : pct >= 75 ? 'Close. Most of it came through.' : 'Not yet. Listen again, then say it slowly.';
@@ -416,17 +434,13 @@ const globalActions = {
     const label = $('span', el);
     if (listeningBtn === el) { S.stopListening(); return; }
     if (!S.canListen()) { box.innerHTML = `<p class="notice">${MIC_ERRORS.unsupported}</p>`; return; }
-    S.stopSpeaking();
-    await stopRecording();
-    listeningBtn = el;
-    el.classList.add('live');
     label.textContent = 'Listening. Tap to stop';
     box.innerHTML = '<p class="interim">Speak now</p>';
     try {
-      const alts = await S.listen({ onInterim: (t) => { const p = $('.interim', box); if (p) p.textContent = t; } });
-      if (listeningBtn !== el || !panel.isConnected) return; // another check took over, or the page changed
+      const alts = await micListen(el, (t) => { const p = $('.interim', box); if (p) p.textContent = t; });
+      if (!alts) { box.innerHTML = ''; return; } // another check took over, or the page changed
       if (!alts.length) {
-        box.innerHTML = '<p class="notice">Nothing came through. Tap Say it and speak a little louder.</p>';
+        box.innerHTML = `<p class="notice">${nothingHeard()}</p>`;
       } else {
         const res = S.compare(fill(panel.dataset.target), alts, { skip: [settings().name] });
         box.innerHTML = resultHTML(res);
@@ -435,10 +449,8 @@ const globalActions = {
         panel.dispatchEvent(new CustomEvent('checked', { detail: res, bubbles: true }));
       }
     } catch (err) {
-      if (listeningBtn === el) box.innerHTML = `<p class="notice">${esc(MIC_ERRORS[err.message] || 'Speech checking stopped: ' + err.message)}</p>`;
+      box.innerHTML = `<p class="notice">${micError(err)}</p>`;
     } finally {
-      if (listeningBtn === el) listeningBtn = null;
-      el.classList.remove('live');
       label.textContent = 'Say it';
     }
   },
@@ -720,7 +732,7 @@ function drawStep() {
       <div class="next"><button class="btn" data-act="reveal">Show answer</button></div>`;
   } else {
     const card = cardFor(it);
-    body = `<p class="eyebrow">${s.kind === 'review' ? 'Review' : 'From memory'} · say it in Turkish</p>
+    body = `<p class="eyebrow">${s.back ? 'Practice' : s.kind === 'review' ? 'Review' : 'From memory'} · say it in Turkish</p>
       <h2 class="prompt">${esc(fill(it.en))}</h2>
       ${speakHTML(it.tr)}
       <div class="answer" hidden>${phraseHTML(it.tr, { size: 'lg' })}${audioHTML(it.tr)}</div>
@@ -729,7 +741,7 @@ function drawStep() {
 
   view.innerHTML = `<div class="session">
     <div class="sbar">
-      <a class="iconlink" href="${s.kind === 'review' ? '#today' : '#path'}" aria-label="Close">${I.x}</a>
+      <a class="iconlink" href="${s.back || (s.kind === 'review' ? '#today' : '#path')}" aria-label="Close">${I.x}</a>
       <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${s.i}"><span style="width:${(s.i / total) * 100}%"></span></div>
       <span class="count">${s.i + 1}/${total}</span>
     </div>
@@ -816,9 +828,9 @@ function finish() {
   s.finished = true;
   local = {};
   if (s.kind === 'review') {
-    view.innerHTML = `<section class="done"><p class="eyebrow">Review done</p><h1 lang="tr">Aferin!</h1><p class="say muted-say">${sayHTML('Aferin')}</p>
+    view.innerHTML = `<section class="done"><p class="eyebrow">${s.back ? 'Practice' : 'Review'} done</p><h1 lang="tr">Aferin!</h1><p class="say muted-say">${sayHTML('Aferin')}</p>
       <p class="lede">Well done. You practised ${plural(s.count, 'card', 'cards')}. Each one comes back right before you would forget it.</p>
-      <div class="row"><a class="btn primary" href="#today">Back to Today</a></div></section>`;
+      <div class="row">${s.back ? `<a class="btn primary" href="${s.back}">Back to Vocab</a>` : '<a class="btn primary" href="#today">Back to Today</a>'}</div></section>`;
     return;
   }
   if (s.kind === 'drill') {
@@ -1347,13 +1359,12 @@ const themeDone = (t) => learnedIn(t) === t.words.length;
 // Themes open one after the other, inside your rank and the ranks below it.
 const themeOpen = (t, m = me()) => rankIndex(t.rank) <= rankIndex(m.rank.id) && THEMES.slice(0, THEMES.indexOf(t)).every(themeDone);
 const currentTheme = (m = me()) => THEMES.find((t) => themeOpen(t, m) && !themeDone(t));
-const dotsHTML = (n) => `<span class="dots" role="img" aria-label="${n} of ${NEED}">${Array.from({ length: NEED }, (_, i) => `<i${i < n ? ' class="on"' : ''}></i>`).join('')}</span>`;
 
 function themesView() {
   const m = me();
   const cur = currentTheme(m);
   view.innerHTML = `
-  <header class="page-head"><h1>Themes</h1><p class="lede">Ten words at a time. Tap the English to hear the Turkish, then switch sides and guess what the Turkish means. Get a word right ${NEED} times and it goes to your vocab. Finish a theme to open the next.</p></header>
+  <header class="page-head"><h1>Themes</h1><p class="lede">Ten words at a time. Tap the English to hear the Turkish, then take the mini test: say each word out loud. Get it right and it goes to your vocab. Finish a theme to open the next.</p></header>
   ${cur ? `<a class="panel theme-now" href="#theme/${cur.id}">
     <p class="eyebrow">Now · ${learnedIn(cur)} of ${cur.words.length} learned</p>
     <h2 class="lesson-title">${esc(cur.title)}</h2>
@@ -1378,89 +1389,116 @@ function themesView() {
 
 let themeUI = { id: null };
 
+// Put a learned theme word in vocab, once.
+function saveThemeWord(t, w) {
+  const kind = kindOf(w.tr);
+  const id = cardId(kind, w.tr);
+  if (!store.card(id)) store.putCard(srs.grade({ id, kind, tr: w.tr, en: w.en, src: 'theme:' + t.id, added: Date.now() }, 3));
+}
+
 function themeView(id) {
   const t = themeById(id);
   if (!t) { location.hash = '#themes'; return; }
   if (!themeOpen(t)) { toast('Finish the themes before this one first.'); location.hash = '#themes'; return; }
-  if (themeUI.id !== id) themeUI = { id, mode: 'en', shown: new Set(), marks: new Map(), order: shuffle(t.words) };
+  if (themeUI.id !== id) themeUI = { id, shown: new Set(), tries: new Map(), order: shuffle(t.words), quiz: shuffle(t.words) };
   xpFrom = t.rank;
+  for (const w of t.words) if (wordN(t, w) >= NEED) saveThemeWord(t, w); // words learned under the old rule
   drawTheme(t);
 }
 
+function quizCardHTML(t, w) {
+  const k = wordKey(t, w);
+  if (wordN(t, w) >= NEED) return `<li class="wcard m-ok">
+    <button class="wface" data-act="tplay" data-k="${esc(k)}">
+      <span class="wmain">${esc(w.en)}</span>
+      <span class="wsub" lang="tr">${esc(w.tr)}</span>
+    </button>
+    <div class="wfoot"><span class="tag on">In vocab</span></div>
+  </li>`;
+  const tr = themeUI.tries.get(k);
+  return `<li class="wcard${tr ? ' m-miss' : ''}">
+    <button class="wface" data-act="ttest" data-k="${esc(k)}">
+      <span class="wmain">${esc(w.en)}</span>
+      <span class="wsub wask">${tr ? 'Tap to try again' : 'Tap, then say it'}</span>
+    </button>
+    ${tr ? `<div class="wtry">
+      <p class="small">${tr.msg}</p>
+      <button class="linkbtn" data-act="tsay" data-k="${esc(k)}" lang="tr">${I.play}${esc(w.tr)}</button>
+      <button class="btn small" data-act="tright" data-k="${esc(k)}">${I.check}<span>I said it right</span></button>
+    </div>` : ''}
+  </li>`;
+}
+
 function drawTheme(t) {
-  const en = themeUI.mode === 'en';
   const n = learnedIn(t);
   view.innerHTML = `
   <a class="backlink" href="#themes">${I.back}<span>Themes</span></a>
   <header class="page-head"><p class="eyebrow">Theme · ${t.rank} · ${n} of ${t.words.length} learned</p><h1>${esc(t.title)}</h1><p class="lede" lang="tr">${esc(t.tr)}</p></header>
-  <div class="seg" role="tablist">
-    <button class="${en ? 'on' : ''}" data-act="tmode" data-m="en" role="tab" aria-selected="${en}">English → Turkish</button>
-    <button class="${en ? '' : 'on'}" data-act="tmode" data-m="tr" role="tab" aria-selected="${!en}">Turkish → English</button>
-  </div>
-  <p class="muted small">${en ? 'Tap a word to hear it in Turkish, and say it out loud after her.' : `Read the Turkish and say what it means. Then tap to check. Each word can score once per round.`}</p>
-  <ul class="wgrid">${themeUI.order.map((w) => {
-    const k = wordKey(t, w);
-    const c = wordN(t, w);
-    const shown = themeUI.shown.has(k);
-    const mark = themeUI.marks.get(k);
-    return `<li class="wcard${c >= NEED ? ' learned' : ''}${mark ? ' m-' + mark : ''}">
-      <button class="wface" data-act="${en ? 'tplay' : 'tguess'}" data-k="${esc(k)}">
-        <span class="wmain"${en ? '' : ' lang="tr"'}>${esc(en ? w.en : w.tr)}</span>
-        <span class="wsub"${en ? ' lang="tr"' : ''}${shown ? '' : ' hidden'}>${esc(en ? w.tr : w.en)}</span>
-      </button>
-      ${!en && shown && !mark ? `<div class="wjudge"><button class="btn small" data-act="tmark" data-k="${esc(k)}" data-ok="0">${I.x}<span>Missed</span></button><button class="btn small primary" data-act="tmark" data-k="${esc(k)}" data-ok="1">${I.check}<span>Knew it</span></button></div>` : ''}
-      <div class="wfoot">${dotsHTML(c)}${c >= NEED ? '<span class="tag on">In vocab</span>' : ''}</div>
-    </li>`;
-  }).join('')}</ul>
-  <div class="row-between theme-foot">
-    <span class="muted small">${n === t.words.length ? 'Theme complete.' : `${t.words.length - n} words to go.`}</span>
-    <button class="btn" data-act="tround">New round</button>
-  </div>
+  <section class="block">
+    <h2 class="h2">Listen</h2>
+    <p class="muted small">Tap a word to hear it in Turkish, and say it out loud after her.</p>
+    <ul class="wgrid">${themeUI.order.map((w) => {
+      const k = wordKey(t, w);
+      const shown = themeUI.shown.has(k);
+      return `<li class="wcard">
+        <button class="wface" data-act="tplay" data-k="${esc(k)}">
+          <span class="wmain">${esc(w.en)}</span>
+          <span class="wsub" lang="tr"${shown ? '' : ' hidden'}>${esc(w.tr)}</span>
+        </button>
+      </li>`;
+    }).join('')}</ul>
+  </section>
+  <section class="block" id="tquiz">
+    <h2 class="h2">Mini test</h2>
+    <p class="muted small">${n === t.words.length ? 'Theme complete.' : `Tap a box and say the word in Turkish. Get it right and it's learned, and goes to your vocab. ${plural(t.words.length - n, 'word', 'words')} to go.`}</p>
+    <ul class="wgrid">${themeUI.quiz.map((w) => quizCardHTML(t, w)).join('')}</ul>
+  </section>
   <div id="theme-end"></div>`;
 
   const find = (k) => t.words.find((w) => wordKey(t, w) === k);
+  const learned = (w) => {
+    if (wordN(t, w) >= NEED) return;
+    store.wordHit(wordKey(t, w), NEED);
+    saveThemeWord(t, w);
+    themeUI.tries.delete(wordKey(t, w));
+    toast(`${w.tr} is in your vocab.`);
+    if (themeDone(t)) themeComplete(t);
+  };
   local = {
-    tmode: (el) => { themeUI.mode = el.dataset.m; themeUI.shown = new Set(); drawTheme(t); },
-    tround: () => { themeUI.shown = new Set(); themeUI.marks = new Map(); themeUI.order = shuffle(t.words); drawTheme(t); window.scrollTo(0, 0); },
     tplay: (el) => {
-      const w = find(el.dataset.k);
       themeUI.shown.add(el.dataset.k);
-      el.querySelector('.wsub').hidden = false;
-      S.speak(w.tr);
+      const sub = el.querySelector('.wsub');
+      sub.hidden = false;
+      S.speak(find(el.dataset.k).tr);
     },
-    tguess: (el) => {
+    tsay: (el) => { S.speak(find(el.dataset.k).tr); },
+    tright: (el) => { const w = find(el.dataset.k); learned(w); award(XP.word + XP.mastered); drawTheme(t); },
+    async ttest(el) {
       const k = el.dataset.k;
       const w = find(k);
-      S.speak(w.tr);
-      if (themeUI.shown.has(k)) return;
-      themeUI.shown.add(k);
-      drawTheme(t);
-    },
-    tmark: (el) => {
-      const k = el.dataset.k;
-      if (themeUI.marks.has(k)) return;
-      const ok = el.dataset.ok === '1';
-      themeUI.marks.set(k, ok ? 'ok' : 'miss');
-      if (ok) {
-        const w = find(k);
-        const before = wordN(t, w);
-        const after = store.wordHit(k, NEED);
-        if (after > before) {
-          award(XP.word);
-          if (after === NEED) {
-            const kind = kindOf(w.tr);
-            const id = cardId(kind, w.tr);
-            if (!store.card(id)) store.putCard(srs.grade({ id, kind, tr: w.tr, en: w.en, src: 'theme:' + t.id, added: Date.now() }, 3));
-            award(XP.mastered);
-            toast(`${w.tr} is in your vocab.`);
-            if (themeDone(t)) themeComplete(t);
-          }
-        }
+      if (listeningBtn === el) { S.stopListening(); return; }
+      const ask = $('.wask', el);
+      if (!S.canListen()) { themeUI.tries.set(k, { msg: MIC_ERRORS.unsupported }); drawTheme(t); return; }
+      ask.textContent = 'Listening. Tap to stop';
+      try {
+        const alts = await micListen(el, (said) => { ask.textContent = said; });
+        if (!alts) { if (el.isConnected) ask.textContent = 'Tap, then say it'; return; }
+        if (!alts.length) { themeUI.tries.set(k, { msg: nothingHeard() }); drawTheme(t); return; }
+        const res = S.compare(w.tr, alts);
+        const right = res.score >= 0.75;
+        store.log('spoken');
+        if (right) learned(w);
+        else themeUI.tries.set(k, { msg: `Heard: <span lang="tr">“${esc(res.heardText)}”</span>` });
+        award(XP.spoken + (right ? XP.word + XP.mastered : 0));
+        drawTheme(t);
+        S.speak(w.tr);
+      } catch (err) {
+        themeUI.tries.set(k, { msg: micError(err) });
+        drawTheme(t);
       }
-      drawTheme(t);
     },
   };
-  if (themeDone(t) && n === t.words.length) $('#theme-end').innerHTML = themeEndHTML(t);
+  if (n === t.words.length) $('#theme-end').innerHTML = themeEndHTML(t);
 }
 
 function themeComplete(t) {
@@ -1504,7 +1542,7 @@ function vocabView() {
   const cards = store.cards();
   view.innerHTML = `
   <header class="page-head row-between"><div><h1>Vocab</h1><p class="lede">${plural(cards.filter((c) => c.kind === 'phrase').length, 'phrase', 'phrases')} and ${plural(cards.filter((c) => c.kind === 'word').length, 'word', 'words')}, saved as you learn.</p></div>
-    <a class="btn" href="#add">${I.plus}<span>Add</span></a></header>
+    <span class="row"><a class="btn primary" href="#practise">${I.mic}<span>Practise</span></a><a class="btn" href="#add">${I.plus}<span>Add</span></a></span></header>
   <div class="searchbar">${I.search}<input id="vq" type="search" placeholder="Search Turkish or English" value="${esc(vocabUI.q)}" autocomplete="off" aria-label="Search vocab"></div>
   <div class="filters" role="tablist">${[['all', 'All'], ['phrase', 'Phrases'], ['word', 'Words'], ['weak', 'Weak'], ['mine', 'Added by me']].map(([k, t]) => `<button class="filter${vocabUI.filter === k ? ' on' : ''}" data-act="filter" data-f="${k}" role="tab" aria-selected="${vocabUI.filter === k}">${t}</button>`).join('')}</div>
   <ul class="vlist" id="vlist"></ul>`;
@@ -1523,11 +1561,9 @@ function vocabView() {
   drawVocabList();
 }
 
-function drawVocabList() {
-  const list = $('#vlist');
-  if (!list) return;
+// The cards the current search and filters leave.
+function vocabCards() {
   const q = P.trLower(vocabUI.q.trim());
-  const spell = settings().showSpelling;
   let cards = store.cards();
   if (vocabUI.filter === 'phrase' || vocabUI.filter === 'word') cards = cards.filter((c) => c.kind === vocabUI.filter);
   if (vocabUI.filter === 'weak') cards = cards.filter((c) => c.lapses > 0 || (c.s && srs.retrievability(c) < 0.85));
@@ -1535,6 +1571,24 @@ function drawVocabList() {
   if (vocabUI.rank !== 'all') cards = cards.filter((c) => cardLevel(c) === vocabUI.rank);
   if (vocabUI.topic !== 'all') cards = cards.filter((c) => topicOf(c) === vocabUI.topic);
   if (q) cards = cards.filter((c) => P.trLower(c.tr).includes(q) || P.trLower(c.en).includes(q) || P.clean(c.tr).includes(P.clean(q)));
+  return cards;
+}
+
+// Practise from Vocab: any time, due or not, weakest first, following the filters.
+function practiseView() {
+  if (!session || session.id !== 'V' || session.finished) {
+    const pick = vocabCards().sort((a, b) => (a.s ? srs.retrievability(a) : 0) - (b.s ? srs.retrievability(b) : 0)).slice(0, 20);
+    session = { id: 'V', kind: 'review', back: '#vocab', steps: shuffle(pick).map((c) => ({ type: 'recall', it: { tr: c.tr, en: c.en, words: [], cardId: c.id } })), i: 0, grades: {}, requeued: new Set(), count: 0 };
+  }
+  if (!session.steps.length) { toast('Nothing to practise here yet.'); location.hash = '#vocab'; return; }
+  drawStep();
+}
+
+function drawVocabList() {
+  const list = $('#vlist');
+  if (!list) return;
+  const spell = settings().showSpelling;
+  const cards = vocabCards();
   cards.sort((a, b) => (b.added || 0) - (a.added || 0));
   if (!store.cards().length) {
     list.innerHTML = `<li class="empty"><p>Words you learn appear here automatically.</p><a class="btn primary" href="#lesson/${LESSONS[0].id}">Start with the sounds</a></li>`;
@@ -1636,13 +1690,26 @@ function wordView(text) {
 
 /* ---------- Pronounce ---------- */
 
-const pronUI = { q: '' };
+const pronUI = { tab: 'sounds', letter: 'all' };
+
+// Words and short phrases from your vocab, to study letter by letter.
+const letterCards = () => store.cards().filter((c) => P.tokens(c.tr).length <= 3).sort((a, b) => (b.added || 0) - (a.added || 0));
+const hasLetter = (c, l) => P.tokens(c.tr).some((w) => P.spellOut(w).flat().some((x) => x.k === l));
+const letterList = () => (pronUI.letter === 'all' ? letterCards() : letterCards().filter((c) => hasLetter(c, pronUI.letter)));
+
+// The word with the letters worth watching marked.
+const markedWord = (tr) => P.tokens(tr).map((w) => P.spellOut(w).flat().map((x) => (x.k === pronUI.letter || (pronUI.letter === 'all' && x.watch) ? `<mark>${esc(x.c)}</mark>` : esc(x.c))).join('')).join(' ');
 
 function pronounceView() {
+  const sounds = pronUI.tab === 'sounds';
   view.innerHTML = `
   <header class="page-head"><h1>Pronounce</h1>
     <p class="lede">Turkish is written exactly as it sounds. Learn these sounds once and you can say any word, even one you have never seen. Most of them already exist in Italian.</p></header>
-
+  <div class="seg" role="tablist">
+    <button class="${sounds ? 'on' : ''}" data-act="ptab" data-t="sounds" role="tab" aria-selected="${sounds}">Sound guide</button>
+    <button class="${sounds ? '' : 'on'}" data-act="ptab" data-t="mine" role="tab" aria-selected="${!sounds}">My words</button>
+  </div>
+  ${sounds ? `
   <section class="block">
     <h2 class="h2">The sound line</h2>
     <p>Under every phrase you'll see a line like <span class="say inline">${sayHTML('Teşekkür ederim')}</span>. It spells each sound the way you would read it in English, with Italian vowels. The highlighted syllable carries the stress. ə stands for the Turkish ı.</p>
@@ -1665,27 +1732,64 @@ function pronounceView() {
       <li><b>Question words mi, mı, mu, mü are never stressed.</b> Your voice rises on the word before them: <span class="say inline">${sayHTML('Hazır mısın')}</span>.</li>
     </ol>
     <p class="muted small">Common exceptions, like <span lang="tr">merhaba</span>, <span lang="tr">nasıl</span> and place names, are marked correctly in every sound line.</p>
-  </section>
-
-  <section class="block">
-    <h2 class="h2">Every word</h2>
-    <div class="searchbar">${I.search}<input id="pq" type="search" placeholder="Search words" value="${esc(pronUI.q)}" autocomplete="off" aria-label="Search words"></div>
-    <ul class="wlist" id="wlist"></ul>
-  </section>`;
-  local = {};
-  $('#pq').addEventListener('input', (e) => { pronUI.q = e.target.value; drawWordList(); });
-  drawWordList();
+  </section>` : myWordsHTML()}`;
+  local = {
+    ptab: (el) => { pronUI.tab = el.dataset.t; pronounceView(); },
+    pletter: (el) => { pronUI.letter = el.dataset.l; pronounceView(); },
+  };
 }
 
-function drawWordList() {
-  const list = $('#wlist');
-  const q = P.trLower(pronUI.q.trim());
-  const map = new Map();
-  for (const w of COURSE_WORDS) map.set(P.clean(w.tr), w);
-  for (const c of store.cards()) if (c.kind === 'word' && !map.has(P.clean(c.tr))) map.set(P.clean(c.tr), { tr: c.tr, en: c.en });
-  let words = [...map.values()].sort((a, b) => P.trLower(a.tr).localeCompare(P.trLower(b.tr), 'tr'));
-  if (q) words = words.filter((w) => P.trLower(w.tr).includes(q) || P.trLower(w.en).includes(q));
-  list.innerHTML = words.map((w) => `<li><a href="#word/${encodeURIComponent(w.tr)}"><span class="wtr" lang="tr">${esc(w.tr)}</span><span class="wsay">${sayHTML(w.tr)}</span><span class="wen">${esc(w.en)}</span></a></li>`).join('') || '<li class="empty"><p>Nothing matches.</p></li>';
+function myWordsHTML() {
+  const all = letterCards();
+  if (!all.length) return `<p class="note">The words in your vocab appear here, so you can study their letters. Learn a few in a lesson or a theme first.</p>`;
+  const letters = P.WATCH_LETTERS.filter((l) => all.some((c) => hasLetter(c, l)));
+  if (pronUI.letter !== 'all' && !letters.includes(pronUI.letter)) pronUI.letter = 'all';
+  const list = letterList();
+  return `<p class="muted small">The words you already know, one letter at a time. Pick a word and tap its letters to see how each one sounds. Or pick a letter to see it in all your words.</p>
+  <div class="filters" role="tablist">
+    <button class="filter${pronUI.letter === 'all' ? ' on' : ''}" data-act="pletter" data-l="all" role="tab" aria-selected="${pronUI.letter === 'all'}">All</button>
+    ${letters.map((l) => `<button class="filter${pronUI.letter === l ? ' on' : ''}" data-act="pletter" data-l="${esc(l)}" lang="tr" role="tab" aria-selected="${pronUI.letter === l}">${esc(l)}</button>`).join('')}
+  </div>
+  <ul class="wlist">${list.map((c) => `<li><a href="#letters/${encodeURIComponent(c.tr)}"><span class="wtr" lang="tr">${markedWord(c.tr)}</span><span class="wen">${esc(c.en)}</span></a></li>`).join('')}</ul>`;
+}
+
+// One word from your vocab, letter by letter.
+function lettersView(tr) {
+  const card = store.cards().find((c) => c.tr === tr);
+  if (!card) { location.hash = '#pronounce'; return; }
+  xpFrom = cardRank(card);
+  const list = letterList();
+  const i = list.findIndex((c) => c.tr === tr);
+  const next = list[(i + 1) % list.length];
+  view.innerHTML = `
+  <a class="backlink" href="#pronounce">${I.back}<span>Pronounce</span></a>
+  <p class="eyebrow">Letter by letter${i >= 0 ? ` · ${i + 1} of ${list.length}` : ''}</p>
+  <h1 class="ltitle" lang="tr">${esc(card.tr)}</h1>
+  <p class="en">${esc(card.en)}</p>
+  ${audioHTML(card.tr)}
+  <section class="block">
+    <h3>Tap a letter</h3>
+    <div class="ltiles">${P.tokens(card.tr).map((w) => `<div class="lword">${P.spellOut(w).map((sy) => `<div class="lsyl${sy[0].st ? ' st' : ''}">${sy.map((x) => `<button class="ltile${x.watch ? ' watch' : ''}" data-act="ltap" data-k="${esc(x.k)}" data-c="${esc(x.c)}"><span lang="tr">${esc(x.c)}</span><small>${esc(x.say)}</small></button>`).join('')}</div>`).join('')}</div>`).join('')}</div>
+    <p class="muted small">Boxes are syllables. The highlighted one carries the stress.</p>
+    <div id="ltip" aria-live="polite"></div>
+  </section>
+  <section class="block"><h3>Now say it</h3><p class="muted small">If a letter comes out wrong, the check tells you which one.</p>${speakHTML(card.tr)}</section>
+  ${next && next.tr !== tr ? `<div class="next"><a class="btn primary" href="#letters/${encodeURIComponent(next.tr)}">${I.arrow}<span lang="tr">${esc(next.tr)}</span></a></div>` : ''}`;
+  hydrateRecordings();
+  local = {
+    ltap: (el) => {
+      $$('.ltile', view).forEach((b) => b.classList.toggle('on', b.dataset.k === el.dataset.k));
+      const k = el.dataset.k;
+      const sound = P.SOUNDS.find((x) => x.k === k);
+      const others = letterCards().filter((c) => c.tr !== tr && hasLetter(c, k)).slice(0, 5);
+      $('#ltip').innerHTML = `<div class="ltip">
+        <p><b lang="tr">${esc(k === '2x' ? el.dataset.c + el.dataset.c : el.dataset.c)}</b> ${sound ? esc(sound.tip) : 'Same as in Italian.'}</p>
+        ${sound ? `<button class="btn ghost small" data-act="play" data-text="${esc(sound.ex)}">${I.play}<span lang="tr">${esc(sound.ex)}</span><small>${esc(sound.exEn)}</small></button>` : ''}
+        ${others.length ? `<p class="muted small">Also in your words: ${others.map((c) => `<a href="#letters/${encodeURIComponent(c.tr)}" lang="tr">${esc(c.tr)}</a>`).join(', ')}</p>` : ''}
+      </div>`;
+      if (sound) S.speak(sound.ex);
+    },
+  };
 }
 
 /* ---------- Add your own ---------- */
@@ -2053,10 +2157,10 @@ function gateView(st) {
 
 /* ---------- router and shell ---------- */
 
-const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, drill: drillView, talk: talkView, story: storyView, exam: examView, themes: themesView, theme: themeView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, add: addView, settings: settingsView };
-const TAB_OF = { today: 'today', review: 'today', path: 'path', lesson: 'path', drill: 'path', talk: 'path', story: 'path', exam: 'path', themes: 'themes', theme: 'themes', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', settings: '' };
-const SESSIONS = new Set(['lesson', 'review', 'drill']);
-const FOCUS = new Set(['lesson', 'review', 'drill', 'talk', 'story', 'exam']);
+const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, practise: practiseView, drill: drillView, talk: talkView, story: storyView, exam: examView, themes: themesView, theme: themeView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, letters: lettersView, add: addView, settings: settingsView };
+const TAB_OF = { today: 'today', review: 'today', practise: 'vocab', path: 'path', lesson: 'path', drill: 'path', talk: 'path', story: 'path', exam: 'path', themes: 'themes', theme: 'themes', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', letters: 'pronounce', settings: '' };
+const SESSIONS = new Set(['lesson', 'review', 'practise', 'drill']);
+const FOCUS = new Set(['lesson', 'review', 'practise', 'drill', 'talk', 'story', 'exam']);
 let cleanup = null;
 let current = '';
 

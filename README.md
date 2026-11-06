@@ -3,7 +3,7 @@
 Learn to speak Turkish from zero. Speaking first: listen, echo, understand without text, then say it from memory. Built for an Italian speaker, in English.
 
 - 12 units, 29 lessons, 12 Build drills (grammar you say out loud), 12 dialogues you play a part in, 6 listening stories
-- Themes: 15 A1 topics of 10 words each, one at a time. Hear them from English, guess them from Turkish; 3 right guesses and a word goes to your vocab
+- Themes: 15 A1 topics of 10 words each, one at a time. Hear them from English, then say them in a mini test; one right answer out loud and a word goes to your vocab
 - Vocab filters by level and by topic
 - Levels and ranks: practice earns XP, levels open content step by step, rank exams follow the European levels (A1 to C2)
 - A sound line under every phrase (te-shek-**KÜR** e-**DE**-rim), computed from the spelling

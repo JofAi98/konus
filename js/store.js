@@ -84,7 +84,7 @@ export const store = {
     state.seeded = batch;
     persist();
   },
-  // One right guess for a theme word; returns its new count.
+  // One right answer for a theme word; returns its new count.
   wordHit(key, max) {
     const w = state.words[key] || { n: 0 };
     if (w.n >= max) return w.n;

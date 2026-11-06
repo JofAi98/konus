@@ -90,6 +90,21 @@ export function respellWord(word) {
   return { word: w, syl, say, stress: stressIndex(w, syl) };
 }
 
+// A word letter by letter, grouped in syllables: what each letter sounds like here.
+// k is the entry in SOUNDS (a held double letter is '2x'); st marks the stressed syllable.
+export function spellOut(word) {
+  const { word: w, syl, stress } = respellWord(word);
+  let i = 0;
+  return syl.map((s, n) => [...s].map(() => {
+    const c = w[i];
+    const held = !isV(c) && (w[i - 1] === c || w[i + 1] === c);
+    const ctx = c === 'ğ' ? (FRONT.includes(w[i - 1] || '-') && isV(w[i + 1]) ? 'y' : '–') : V2SAY(c);
+    i++;
+    const k = held ? '2x' : c;
+    return { c, k, say: ctx, st: n === stress && stress >= 0, watch: WATCH.has(c) || held };
+  }));
+}
+
 const up = (s) => s.replace(/ə/g, 'Ə').toUpperCase();
 
 export function respellText(text) {
@@ -123,7 +138,8 @@ export const SOUNDS = [
 ];
 
 // On a word's own page, only the sounds that differ from Italian are worth a note.
-const WATCH = new Set(['c', 'ç', 'ş', 'ı', 'ö', 'ü', 'ğ', 'h', 'j']);
+export const WATCH_LETTERS = ['ç', 'c', 'ş', 'ı', 'ö', 'ü', 'ğ', 'h', 'j'];
+const WATCH = new Set(WATCH_LETTERS);
 
 export function soundTips(word) {
   const w = clean(word);

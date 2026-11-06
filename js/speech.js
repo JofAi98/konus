@@ -44,7 +44,7 @@ function playFile(voice, text, slow, fast = false) {
     a._done = resolve;
     a.preservesPitch = true;
     a.playbackRate = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : fast ? 1.2 : 1) * (rate / 0.9)));
-    a.onended = () => resolve();
+    a.onended = () => { if (player === a) stopPlayer(); else resolve(); };
     a.onerror = () => resolve();
     a.play().catch((err) => {
       if (err?.name === 'NotAllowedError') window.dispatchEvent(new CustomEvent('speech-error', { detail: 'not-allowed' }));
@@ -63,7 +63,10 @@ export async function playVoice(voice, text, { slow = false } = {}) {
 function stopPlayer() {
   if (!player) return;
   const a = player; player = null;
-  a.pause(); a._done?.();
+  a.onerror = null;
+  a.pause();
+  a.removeAttribute('src'); a.load(); // let go of the audio hardware before the mic needs it
+  a._done?.();
 }
 
 export function stopSpeaking() {
@@ -98,13 +101,15 @@ function pickVoice() {
 }
 
 // iPhone mutes web speech when the phone is on silent and drops speech that
-// doesn't start from a tap. Call this from the first tap: it switches the page
-// to media playback (which ignores the silent switch) and warms up the voice.
+// doesn't start from a tap. Call this from the first tap: it sets an audio session
+// that ignores the silent switch and warms up the voice. The session stays
+// play-and-record for good: once a recorded voice has played in plain playback,
+// iPhone can leave the next speech check deaf, with the mic on and no events.
 let unlocked = false;
 export function unlockAudio() {
   if (unlocked) return;
   unlocked = true;
-  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* older Safari */ }
+  try { if (navigator.audioSession) navigator.audioSession.type = SR ? 'play-and-record' : 'playback'; } catch { /* older Safari */ }
   try {
     const n = 800;
     const buf = new ArrayBuffer(44 + n);
@@ -169,68 +174,83 @@ function deviceSpeak(text, { slow = false, fast = false } = {}) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 export const canListen = () => !!SR;
 
-let active = null; // { rec, finish } for the recognition in progress
+let active = null; // { finish, stop } for the check in progress
+let micReady = false; // the mic has started at least once, so permission is settled
+let lastEnd = '';
 
-// iPhone: the page is set to media playback so audio ignores the silent switch,
-// and that session type can't record. Switch it while the microphone is in use.
-let micUsers = 0;
-let sessionBefore = '';
-export function micOn() {
-  try {
-    if (!micUsers++ && navigator.audioSession) { sessionBefore = navigator.audioSession.type; navigator.audioSession.type = 'play-and-record'; }
-  } catch { /* older Safari */ }
-}
-export function micOff() {
-  if (!micUsers || --micUsers) return;
-  try { if (navigator.audioSession && sessionBefore) navigator.audioSession.type = sessionBefore; } catch { /* older Safari */ }
-}
+// Why the last check ended; shown when nothing came through.
+export const listenEnd = () => lastEnd;
 
 export function listen({ onInterim } = {}) {
   if (!SR) return Promise.reject(new Error('unsupported'));
   if (active) active.finish([]);
   return new Promise((resolve, reject) => {
-    const rec = new SR();
-    rec.lang = 'tr-TR';
-    rec.interimResults = true;
-    rec.maxAlternatives = 5;
-    rec.continuous = false;
     let finals = [];
     let latest = '';
     let done = false;
+    let rec = null;
     let cap = 0;
     let watchdog = 0;
+    let deaf = 0;
+    const results = () => (finals.length ? finals : latest ? [{ text: latest, conf: 0 }] : []);
     // Settle exactly once, whichever comes first: the browser's own end, an error,
     // a stop that the browser never confirms, or the time limit.
-    const finish = (value, err) => {
+    const finish = (value, err, ended) => {
       if (done) return;
       done = true;
-      clearTimeout(cap); clearTimeout(watchdog);
-      if (active?.rec === rec) active = null;
-      micOff();
-      try { rec.abort(); } catch { /* already stopped */ }
+      clearTimeout(cap); clearTimeout(watchdog); clearTimeout(deaf);
+      if (active === me) active = null;
+      if (!ended) try { rec.abort(); } catch { /* already stopped */ }
       if (err) reject(err); else resolve(value);
     };
-    const results = () => (finals.length ? finals : latest ? [{ text: latest, conf: 0 }] : []);
-    rec.onresult = (e) => {
-      const res = e.results[e.results.length - 1];
-      if (res.isFinal) {
-        finals = [];
-        for (let i = 0; i < res.length; i++) finals.push({ text: res[i].transcript, conf: res[i].confidence });
-      } else {
-        latest = res[0].transcript;
-        onInterim?.(latest);
-      }
-    };
-    rec.onerror = (e) => { if (e.error === 'no-speech' || e.error === 'aborted') finish(results()); else finish(null, new Error(e.error)); };
-    rec.onend = () => finish(results());
     const stop = () => {
       try { rec.stop(); } catch { /* already stopped */ }
-      watchdog = setTimeout(() => finish(results()), 1500);
+      lastEnd = 'stopped';
+      watchdog = setTimeout(() => { lastEnd = 'no reply'; finish(results()); }, 1500);
     };
-    active = { rec, finish, stop };
-    micOn();
+    const me = { finish, stop };
+    active = me;
+
+    // Each attempt is a fresh recogniser. If a mic that worked before stays silent,
+    // drop it and try once more: iPhone sometimes starts one that never hears.
+    const open = (retry) => {
+      const r = new SR();
+      rec = r;
+      r.lang = 'tr-TR';
+      r.interimResults = true;
+      r.maxAlternatives = 5;
+      r.continuous = false;
+      r.onaudiostart = () => { micReady = true; clearTimeout(deaf); };
+      r.onresult = (e) => {
+        if (r !== rec) return;
+        const res = e.results[e.results.length - 1];
+        if (res.isFinal) {
+          finals = [];
+          for (let i = 0; i < res.length; i++) finals.push({ text: res[i].transcript, conf: res[i].confidence });
+        } else {
+          latest = res[0].transcript;
+          onInterim?.(latest);
+        }
+      };
+      r.onerror = (e) => {
+        if (r !== rec) return;
+        lastEnd = e.error;
+        if (e.error === 'no-speech' || e.error === 'aborted') finish(results(), null, true);
+        else finish(null, new Error(e.error), true);
+      };
+      r.onend = () => { if (r === rec) finish(results(), null, true); };
+      if (micReady) {
+        deaf = setTimeout(() => {
+          try { r.abort(); } catch { /* already stopped */ }
+          if (retry) open(false);
+          else { lastEnd = 'mic silent'; finish([]); }
+        }, 2500);
+      }
+      try { r.start(); } catch (err) { finish(null, err, true); }
+    };
+    lastEnd = 'ended';
     cap = setTimeout(stop, 15000);
-    try { rec.start(); } catch (err) { finish(null, err); }
+    open(true);
   });
 }
 
@@ -339,11 +359,7 @@ export const suggestGrade = (score) => (score >= 0.95 ? 3 : score >= 0.75 ? 2 : 
 export const canRecord = () => !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
 export async function startRecording() {
-  micOn();
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-  } catch (err) { micOff(); throw err; }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
   const mr = new MediaRecorder(stream);
   const chunks = [];
   mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
@@ -356,7 +372,6 @@ export async function startRecording() {
         if (done) return;
         done = true;
         stream.getTracks().forEach((t) => t.stop());
-        micOff();
         resolve(new Blob(chunks, { type: mr.mimeType || 'audio/webm' }));
       };
       mr.onstop = () => setTimeout(end); // the last chunk arrives just before "stop"

@@ -1,5 +1,5 @@
-// Themes: ten words at a time around one topic. Hear them from English, then guess them from Turkish.
-// Three right guesses and a word goes to your vocab. Finish a theme to open the next one.
+// Themes: ten words at a time around one topic. Hear them from English, then say them in a mini test.
+// One right answer out loud and a word goes to your vocab. Finish a theme to open the next one.
 // Each word: "turkish=english" with an optional "| note".
 
 const T = (id, title, tr, rank, words) => ({
@@ -11,7 +11,7 @@ const T = (id, title, tr, rank, words) => ({
   }),
 });
 
-export const NEED = 3;
+export const NEED = 1;
 
 export const THEMES = [
   T('greetings', 'Greetings', 'Selamlaşma', 'A1', [
