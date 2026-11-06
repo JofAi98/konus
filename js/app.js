@@ -1,9 +1,9 @@
-import { L, P, useLang, LESSONS, lessonById, COURSE_WORDS, DRILLS, drillById, DIALOGUES, dialogueById, WHO, STORIES, storyById, THEMES, NEED, themeById, wordKey, VOICES, SAMPLES, NEXT_RANK } from './lang.js';
+import { L, P, PACKS, useLang, LESSONS, lessonById, COURSE_WORDS, DRILLS, drillById, DIALOGUES, dialogueById, WHO, STORIES, storyById, THEMES, NEED, themeById, wordKey, VOICES, SAMPLES, NEXT_RANK } from './lang.js';
 import * as S from './speech.js';
 import * as srs from './srs.js';
 import { store, cardId, saveRecording, getRecording, dayKey, WEEK_GOAL, DAY_XP } from './store.js';
 import * as sync from './sync.js';
-import { PATH, KIND, XP, DAILY_GOAL, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, XP_PER_LEVEL, levelInfo, xpToReach, rankOf, rankIndex, isOpen, featureOpen, unlocksAt, refreshPath } from './levels.js';
+import { PATH, KIND, XP, DAILY_GOAL, RANKS, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, XP_PER_LEVEL, levelInfo, xpToReach, rankOf, rankIndex, isOpen, featureOpen, unlocksAt, refreshPath } from './levels.js';
 
 /* ---------- helpers ---------- */
 
@@ -128,6 +128,7 @@ const isDone = (id) => !!store.state.progress[id];
 const pathItem = (id) => PATH.find((p) => p.id === id);
 // During the tutorial (rank F), its five steps come first.
 const nextUp = (m = me()) => (m.hunter.id === 'F' && PATH.find((p) => TUTORIAL.includes(p.id) && !isDone(p.id)))
+  || PATH.find((p) => !isDone(p.id) && isOpen(p, m) && p.rank === m.rank.id)
   || PATH.find((p) => !isDone(p.id) && isOpen(p, m));
 
 const badgeHTML = (h, size = '') => `<span class="hbadge r-${h.letter}${size ? ' ' + size : ''}" role="img" aria-label="Rank ${h.id}">
@@ -418,7 +419,7 @@ const globalActions = {
   back: () => history.back(),
   locked: (el) => {
     const m = me();
-    if (el.dataset.rank) { toast(`Opens when you pass the ${m.rank.id} exam. The exam opens at level 30.`); return; }
+    if (el.dataset.rank) { toast(`Opens when you pass the ${m.rank.id} exam. The exam opens at level 30.${L.TESTS ? ' The A1 test opens it too.' : ''}`); return; }
     const L = +el.dataset.level;
     toast(`Opens at level ${L}. You're level ${m.level}, with ${xpToGo(L, m)} XP to go.`);
   },
@@ -516,6 +517,7 @@ function todayView() {
   ${levelCardHTML(m)}
 
   <div class="today-grid">
+    ${placementPanelHTML()}
     <article class="panel">
       <p class="eyebrow">Review</p>
       ${due ? `<h2 class="big-num">${due}</h2><p class="muted">${due === 1 ? 'phrase is' : 'phrases and words are'} ready to practise. Reviewing right before you forget is what makes words stick.</p>
@@ -567,12 +569,13 @@ function pathView() {
   const levels = [...groups.keys()].sort((a, b) => a - b);
   const here = Math.max(...levels.filter((L) => L <= m.level), levels[0]);
   const passedA1 = rankIndex(m.rank.id) > 0;
+  const a2 = PATH.filter((p) => p.rank === 'A2' && (pathUI.kind === 'all' || p.kind === pathUI.kind));
 
   const row = (p) => {
     const open = isOpen(p, m);
     const done = isDone(p.id);
     const isNext = next?.id === p.id;
-    return `<li><a class="lrow${done ? ' done' : ''}${isNext ? ' is-next' : ''}${open ? '' : ' locked'}" href="${open ? p.href : '#path'}"${open ? '' : ` data-act="locked" data-level="${p.level}"`}>
+    return `<li><a class="lrow${done ? ' done' : ''}${isNext ? ' is-next' : ''}${open ? '' : ' locked'}" href="${open ? p.href : '#path'}"${open ? '' : ` data-act="locked" data-level="${p.level}"${p.rank === 'A1' ? '' : ' data-rank="1"'}`}>
       <span class="lstate">${done ? I.check : open ? '' : I.lock}</span>
       <span class="ltext"><b>${esc(p.title)}</b><small>${esc(p.sub)}</small></span>
       <span class="tag k-${p.kind}">${KIND[p.kind]}</span>
@@ -605,6 +608,8 @@ function pathView() {
     <p><b>What A1 means.</b> You can introduce yourself, ask and answer simple questions, and get through everyday moments like a meal, a café or a phone call, if people speak slowly.</p>
   </details>
 
+  ${placementRowsHTML()}
+
   <div class="filters" role="tablist">${[['all', 'All'], ['lesson', 'Lessons'], ['drill', 'Build'], ['dialogue', 'Talk'], ['story', 'Stories']].map(([k, t]) => `<button class="filter${pathUI.kind === k ? ' on' : ''}" data-act="pfilter" data-k="${k}" role="tab" aria-selected="${pathUI.kind === k}">${t}</button>`).join('')}</div>
 
   <h2 class="rank-title"><span class="rank-badge small">A1</span>Beginner <span lang="${L.tag}" class="muted">${esc(L.rankNames.A1)}</span><span class="ranks-note">Ranks F, E, E+</span></h2>
@@ -619,7 +624,9 @@ function pathView() {
   }).join('')}
 
   <h2 class="rank-title${passedA1 ? '' : ' locked'}"><span class="rank-badge small">A2</span>Elementary <span lang="${L.tag}" class="muted">${esc(L.rankNames.A2)}</span><span class="ranks-note">Ranks D, D+</span></h2>
-  <p class="muted small">${passedA1 ? 'Open. These arrive in app updates as they are written.' : 'Pass the A1 exam to open all of this at once.'}</p>
+  ${a2.length ? `<p class="muted small">${passedA1 ? 'All of this is open.' : 'Pass the A1 test or the A1 exam to open all of this at once.'}</p>
+  <ol class="lessons">${a2.map(row).join('')}</ol>` : ''}
+  ${NEXT_RANK.A2.length ? `<p class="muted small">${passedA1 ? 'Open. These arrive in app updates as they are written.' : 'Pass the A1 exam to open all of this at once.'}</p>` : ''}
   <ol class="lessons">${NEXT_RANK.A2.filter((p) => pathUI.kind === 'all' || p.kind === pathUI.kind).map((p) => `<li><div class="lrow locked"${passedA1 ? '' : ' data-act="locked" data-rank="A2" role="button" tabindex="0"'}>
     <span class="lstate">${passedA1 ? '' : I.lock}</span><span class="ltext"><b>${esc(p.title)}</b><small>${esc(p.sub)}</small></span><span class="tag k-${p.kind}">${passedA1 ? 'Soon' : KIND[p.kind]}</span>
   </div></li>`).join('')}</ol>`;
@@ -827,6 +834,7 @@ function finish() {
       <div class="row">${s.back ? `<a class="btn primary" href="${s.back}">Back to Vocab</a>` : '<a class="btn primary" href="#today">Back to Today</a>'}</div></section>`;
     return;
   }
+  if (s.study) { finishStudy(s); return; }
   if (s.kind === 'drill') {
     const d = s.drill;
     const first = !isDone(d.id);
@@ -1201,15 +1209,17 @@ const PASS = 0.8;
 function examView(kind) {
   const m = me();
   const mock = kind === 'mock';
-  if (!mock && kind !== 'A1') { location.hash = '#path'; return; }
-  const passed = !!store.state.progress['rank:A2'];
-  const open = mock ? featureOpen('mock', m) : (m.level >= 30 || passed);
-  if (!open) { lockedView({ kind: 'exam', rank: 'A1', title: mock ? 'Practice exam' : 'A1 exam', level: mock ? 20 : 30 }); return; }
+  const rank = mock ? RANKS[0] : RANKS.find((r) => r.id === kind);
+  if (!rank || !LESSONS.some((l) => l.rank === rank.id)) { location.hash = '#path'; return; }
+  const after = RANKS[rankIndex(rank.id) + 1].id; // what passing it opens
+  const passed = !!store.state.progress['rank:' + after];
+  const open = mock ? featureOpen('mock', m) : (m.level >= rank.examAt || passed);
+  if (!open) { lockedView({ kind: 'exam', rank: rank.id, title: mock ? 'Practice exam' : `${rank.id} exam`, level: mock ? 20 : rank.examAt }); return; }
   const failedToday = !mock && !passed && store.state.stats.days[dayKey()]?.examFail;
   view.innerHTML = `
   <div class="sbar"><a class="iconlink" href="#path" aria-label="Close">${I.x}</a><span class="eyebrow">${mock ? 'Practice exam' : 'Rank exam'}</span></div>
-  <header class="page-head"><h1>${mock ? 'A1 practice exam' : 'A1 exam'}</h1>
-    <p class="lede">${mock ? 'The same format as the real exam. Take it as often as you like.' : passed ? `You passed on ${new Date(store.state.progress['rank:A2'].at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}. Take it again any time for practice.` : 'Pass it to become A2. Everything in A2 opens at once: grammar, vocabulary, dialogues and stories.'}</p></header>
+  <header class="page-head"><h1>${mock ? 'A1 practice exam' : `${rank.id} exam`}</h1>
+    <p class="lede">${mock ? 'The same format as the real exam. Take it as often as you like.' : passed ? `You passed on ${new Date(store.state.progress['rank:' + after].at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}. Take it again any time for practice.` : `Pass it to become ${after}. Everything in ${after} opens at once: grammar, vocabulary, dialogues and stories.`}</p></header>
   <ol class="exam-parts">
     <li><b>Listening</b><span>6 questions. Hear a sentence, choose what it means.</span></li>
     <li><b>Speaking</b><span>8 questions. Read the English, say it in ${L.name}.</span></li>
@@ -1218,23 +1228,24 @@ function examView(kind) {
   <p class="muted small">Pass mark: ${Math.round(20 * PASS)} of 20. ${mock ? '' : 'If you don\'t pass, you can try again tomorrow.'}${S.canListen() ? '' : ' This browser can\'t check speech, so in the speaking part you mark yourself.'}</p>
   ${failedToday ? '<p class="notice">Not this time. The exam opens again tomorrow: until then, the practice exam and your reviews are the best preparation.</p>'
     : `<div class="row"><button class="btn primary" data-act="exstart">${I.arrow}<span>Start</span></button></div>`}`;
-  xpFrom = 'A1';
-  local = { exstart: () => { exam = buildExam(mock); drawExamQ(); } };
+  xpFrom = rank.id;
+  local = { exstart: () => { exam = buildExam(mock, rank.id); drawExamQ(); } };
 }
 
-function buildExam(mock) {
+function buildExam(mock, rank) {
   const seen = new Set();
-  const pool = shuffle([...LESSONS.flatMap((l) => l.items), ...DRILLS.flatMap((d) => d.items)]
+  const ofRank = (list) => list.filter((x) => x.rank === rank);
+  const pool = shuffle([...ofRank(LESSONS).flatMap((l) => l.items), ...ofRank(DRILLS).flatMap((d) => d.items)]
     .filter((it) => P.tokens(it.tr).length > 1 && !it.tr.includes('{') && !seen.has(it.tr) && seen.add(it.tr)));
   const others = (en) => shuffle(pool.filter((o) => o.en !== en)).slice(0, 3).map((o) => o.en);
   const listen = pool.slice(0, 6).map((it) => ({ type: 'listen', it, options: shuffle([it.en, ...others(it.en)]), answer: it.en }));
   const speak = pool.slice(6, 14).map((it) => ({ type: 'speak', it }));
-  const yours = DIALOGUES.flatMap((d) => d.lines.filter((l) => l.who === 'you' && !l.tr.includes('{')));
-  const turns = DIALOGUES.flatMap((d) => d.lines.slice(0, -1).map((l, i) => [l, d.lines[i + 1]])).filter(([a, b]) => a.who !== 'you' && b.who === 'you' && !a.tr.includes('{'));
+  const yours = ofRank(DIALOGUES).flatMap((d) => d.lines.filter((l) => l.who === 'you' && !l.tr.includes('{')));
+  const turns = ofRank(DIALOGUES).flatMap((d) => d.lines.slice(0, -1).map((l, i) => [l, d.lines[i + 1]])).filter(([a, b]) => a.who !== 'you' && b.who === 'you' && !a.tr.includes('{'));
   const convo = shuffle(turns).slice(0, 6).map(([cue, reply]) => ({
     type: 'convo', cue, answer: reply.tr, options: shuffle([reply.tr, ...shuffle(yours.filter((l) => l.tr !== reply.tr)).slice(0, 2).map((l) => l.tr)]),
   }));
-  return { mock, qs: [...listen, ...speak, ...convo], i: 0, right: 0 };
+  return { mock, rank, qs: [...listen, ...speak, ...convo], i: 0, right: 0 };
 }
 
 function drawExamQ() {
@@ -1313,23 +1324,375 @@ function examResult() {
   const e = exam;
   const n = e.qs.length;
   const pass = e.right / n >= PASS;
-  const wasA1 = !store.state.progress['rank:A2'];
+  const after = RANKS[rankIndex(e.rank) + 1].id;
+  const wasA1 = !store.state.progress['rank:' + after];
   if (e.mock) award(XP.again);
-  else if (pass && wasA1) { store.markLesson('rank:A2'); award(XP.exam, null); }
+  else if (pass && wasA1) { store.markLesson('rank:' + after); award(XP.exam, null); }
   else if (pass) award(XP.again);
   else store.log('examFail');
   exam = null;
   view.innerHTML = `<section class="done">
-    <p class="eyebrow">${e.mock ? 'Practice exam' : 'A1 exam'} · result</p>
+    <p class="eyebrow">${e.mock ? 'Practice exam' : `${e.rank} exam`} · result</p>
     <h1 class="big-num">${e.right} / ${n}</h1>
     <h2 class="lesson-title" lang="${L.tag}">${esc(pass ? L.congrats : L.chinUp)}</h2>
     <p class="lede">${pass
-    ? (e.mock ? 'That would pass the real exam.' : wasA1 ? 'You\'re A2 now. Everything in A2 is open, and the path shows what\'s coming.' : 'Passed again.')
+    ? (e.mock ? 'That would pass the real exam.' : wasA1 ? `You're ${after} now. Everything in ${after} is open, and the path shows what's coming.` : 'Passed again.')
     : `You need ${Math.round(n * PASS)} to pass. ${e.mock ? 'Review, replay a few dialogues, and try again.' : 'Try again tomorrow. Until then, the practice exam and your reviews are the best preparation.'}`}</p>
     <div class="row"><a class="btn primary" href="#path">Back to path</a>${e.mock ? '<a class="btn" href="#exam/mock">Take it again</a>' : ''}</div>
   </section>`;
   local = {};
   drawLevelChip();
+}
+
+/* ---------- Placement tests and studying your mistakes ---------- */
+
+let run = null; // the test in progress: { level, i, answers: { id: { ok, given, slip } } }
+const CATS = [['grammar', 'Grammar'], ['rules', 'Sounds and spelling'], ['vocab', 'Vocabulary']];
+const ACCENTS = ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü', '¿', '¡'];
+
+const testQs = (t) => t.sections.flatMap((sec) => sec.qs.map((q) => ({ ...q, part: sec.part, note: sec.note })));
+const openStudy = () => Object.entries(store.state.study).filter(([, s]) => (s.done || 0) < s.at).map(([id]) => id).filter((id) => L.ruleById(id));
+const plainText = (s) => P.trLower(s).replace(/[¿¡.,!?;:«»"—]/g, ' ').replace(/\s+/g, ' ').trim();
+const noAccents = (s) => s.normalize('NFD').replace(/[\u0301\u0308]/g, '').normalize('NFC');
+
+function gradeTyped(q, text) {
+  const t = plainText(text);
+  if (!t) return { ok: false, given: '' };
+  if (q.answers.some((a) => plainText(a) === t)) return { ok: true, given: text };
+  if (!q.strict && q.answers.some((a) => noAccents(plainText(a)) === noAccents(t))) return { ok: true, slip: true, given: text };
+  return { ok: false, given: text };
+}
+
+// On Today: what to do about your level, or your mistakes.
+function placementPanelHTML() {
+  if (!L.TESTS) return '';
+  const left = openStudy().length;
+  if (left) return `<article class="panel">
+      <p class="eyebrow">Your mistakes</p>
+      <h2 class="big-num">${left}</h2><p class="muted">${left === 1 ? 'rule' : 'rules'} from your test still to study. Clear these before anything new.</p>
+      <a class="btn primary" href="#study">${I.arrow}<span>Study them</span></a>
+    </article>`;
+  if (store.state.tests.A1) return '';
+  return `<article class="panel">
+      <p class="eyebrow">Find your level</p>
+      <h2 class="lesson-title">A1 test</h2><p class="muted">You had some Spanish once. See what's left: pass this and you start at A2.</p>
+      <a class="btn primary" href="#test/A1">${I.arrow}<span>Take the test</span></a>
+    </article>`;
+}
+
+// On Path: the two tests and the study list.
+function placementRowsHTML() {
+  if (!L.TESTS) return '';
+  const row = (t) => {
+    const r = store.state.tests[t.id];
+    return `<li><a class="lrow feature${r?.pass ? ' done' : ''}" href="#test/${t.id}${r ? '/result' : ''}">
+      <span class="lstate">${r?.pass ? I.check : I.star}</span>
+      <span class="ltext"><b>${esc(t.title)}</b><small>${r ? `${r.right} of ${r.total} · ${r.pass ? 'passed' : 'not passed yet'}` : 'Spoken and written, covering the whole level'}</small></span>
+      <span class="tag k-exam">Test</span>
+    </a></li>`;
+  };
+  const left = openStudy().length;
+  const any = Object.keys(store.state.study).length;
+  return `<section class="block"><h2 class="h2">Placement</h2>
+    <ol class="lessons">${Object.values(L.TESTS).map(row).join('')}
+      ${any ? `<li><a class="lrow feature${left ? ' is-next' : ' done'}" href="#study">
+        <span class="lstate">${left ? '' : I.check}</span>
+        <span class="ltext"><b>Study your mistakes</b><small>${left ? `${plural(left, 'rule', 'rules')} to go` : 'All studied'}</small></span>
+        <span class="tag">Study</span>
+      </a></li>` : ''}
+    </ol></section>`;
+}
+
+function testView(arg = '') {
+  const [level, sub] = arg.split('/');
+  const t = L.TESTS?.[level];
+  if (!t) { location.hash = '#path'; return; }
+  if (sub === 'result' && store.state.tests[level]) { testResultView(t); return; }
+  const qs = testQs(t);
+  const last = store.state.tests[level];
+  const saved = store.state.run?.level === level ? store.state.run : null;
+  view.innerHTML = `
+  <div class="sbar"><a class="iconlink" href="#path" aria-label="Close">${I.x}</a><span class="eyebrow">Placement test</span></div>
+  <header class="page-head"><h1>${esc(t.title)}</h1><p class="lede">${esc(t.about)}</p></header>
+  <ol class="exam-parts">${t.sections.map((sec) => `<li><b>${esc(L.partTitle(sec.part))}</b><span>${plural(sec.qs.length, 'question', 'questions')}. ${esc(sec.note)}</span></li>`).join('')}</ol>
+  <p class="muted small">Pass mark: ${Math.ceil(qs.length * PASS)} of ${qs.length}. Nothing is marked until the end, so you can't see how it's going. ${t.id === 'A1' ? 'Pass it and you start at A2, with level and rank to match.' : ''}${S.canListen() ? '' : ' This browser can\'t check speech, so in the speaking part you mark yourself.'}</p>
+  ${last ? `<p class="note">Last time: ${last.right} of ${last.total}${last.pass ? ', passed' : ''}. <a href="#test/${level}/result">See what you got wrong</a>.</p>` : ''}
+  <div class="row">
+    ${saved ? `<button class="btn primary" data-act="tresume">${I.arrow}<span>Continue from question ${saved.i + 1}</span></button>` : ''}
+    <button class="btn${saved ? '' : ' primary'}" data-act="tstart">${I.arrow}<span>${saved ? 'Start again' : 'Start'}</span></button>
+  </div>`;
+  xpFrom = rankIndex(level) > rankIndex(me().rank.id) ? null : level;
+  local = {
+    tstart: () => { run = { level, i: 0, answers: {} }; store.setRun(run); drawTestQ(); },
+    tresume: () => { run = saved; drawTestQ(); },
+  };
+}
+
+function drawTestQ() {
+  const t = L.TESTS[run.level];
+  const qs = testQs(t);
+  const q = qs[run.i];
+  const n = qs.length;
+  let tries = 0;
+  const answer = () => run.answers[q.id];
+  const head = `<p class="eyebrow">${esc(L.partTitle(q.part))} · ${run.i + 1} of ${n}</p>`;
+  const typed = (label) => `<label for="tq-in">${label}</label>
+    <input id="tq-in" type="text" lang="${L.tag}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(answer()?.given || '')}">
+    <div class="accents">${ACCENTS.map((c) => `<button class="filter" data-act="tacc" data-c="${c}" tabindex="-1" lang="${L.tag}">${c}</button>`).join('')}</div>`;
+  const opts = (o, spanish) => `<div class="opts col">${o.map((x, i) => `<button class="opt" data-act="tpick" data-i="${i}"${spanish ? ` lang="${L.tag}"` : ''}>${esc(x)}</button>`).join('')}</div>`;
+  const play = (text) => `<div class="audio big"><button class="btn primary" data-act="play" data-text="${esc(text)}">${I.play}<span>Listen again</span></button><button class="btn ghost" data-act="play" data-slow="1" data-text="${esc(text)}"><span>Slow</span></button></div>`;
+  let body = '';
+  if (q.type === 'choose') body = `<h2 class="prompt" lang="${L.tag}">${esc(q.prompt)}</h2>${opts(q.options, true)}`;
+  if (q.type === 'write') body = `<h2 class="prompt">${esc(q.prompt)}</h2>${typed('Your answer')}`;
+  if (q.type === 'meaning') body = `<h2 class="prompt">What does it mean?</h2>${play(q.say)}${opts(q.options)}`;
+  if (q.type === 'dictate') body = `<h2 class="prompt">Type what you hear</h2>${play(q.say)}${typed('What it says')}`;
+  if (q.type === 'speak') {
+    body = `<h2 class="prompt">${esc(q.en)}</h2>
+      ${S.canListen() ? speakHTML(q.tr) : '<p class="muted">Say it out loud, then show the answer and mark yourself honestly.</p>'}
+      <div class="answer" hidden>${phraseHTML(q.tr, { size: 'lg' })}</div>`;
+  }
+  view.innerHTML = `<div class="session">
+    <div class="sbar">
+      <a class="iconlink" href="#test/${run.level}" aria-label="Leave the test">${I.x}</a>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${run.i}"><span style="width:${(run.i / n) * 100}%"></span></div>
+      <span class="count">${run.i + 1}/${n}</span>
+    </div>
+    <div class="stage">${head}${body}<div class="next tnext"></div></div>
+  </div>`;
+  window.scrollTo(0, 0);
+
+  const forward = () => {
+    run.i++;
+    store.setRun(run);
+    S.cancelListening();
+    S.stopSpeaking();
+    if (run.i < n) drawTestQ(); else finishTest();
+  };
+  const nextBtn = (label = run.i + 1 < n ? 'Next' : 'See result') => { $('.tnext', view).innerHTML = `<button class="btn primary" data-act="tnext">${label} ${I.arrow}</button>`; };
+  const keep = (a) => { run.answers[q.id] = a; store.setRun(run); };
+
+  local = {
+    tpick: (el) => {
+      const i = +el.dataset.i;
+      $$('.opt', view).forEach((b) => b.classList.toggle('picked', b === el));
+      keep({ ok: i === q.a, given: q.options[i] });
+      nextBtn();
+    },
+    tacc: (el) => {
+      const input = $('#tq-in');
+      const at = input.selectionStart ?? input.value.length;
+      input.value = input.value.slice(0, at) + el.dataset.c + input.value.slice(input.selectionEnd ?? at);
+      input.focus();
+      input.setSelectionRange(at + 1, at + 1);
+    },
+    tnext: () => {
+      if (q.type === 'write' || q.type === 'dictate') keep(gradeTyped(q, $('#tq-in').value));
+      forward();
+    },
+    tskip: () => { if (!answer()) keep({ ok: false, given: '' }); forward(); },
+    tshow: () => {
+      $('.answer', view).hidden = false;
+      S.speak(q.tr);
+      $('.tnext', view).innerHTML = '<button class="btn" data-act="tself" data-ok="0">I got it wrong</button><button class="btn primary" data-act="tself" data-ok="1">I said it right</button>';
+    },
+    tself: (el) => { keep({ ok: el.dataset.ok === '1', given: el.dataset.ok === '1' ? q.tr : '' }); forward(); },
+  };
+  if (q.type === 'choose' || q.type === 'meaning') $('.tnext', view).innerHTML = '<button class="btn ghost" data-act="tskip">I don\'t know</button>';
+  if (q.type === 'write' || q.type === 'dictate') {
+    nextBtn();
+    $('#tq-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); local.tnext(); } });
+  }
+  if (q.type === 'speak') {
+    if (S.canListen()) {
+      $('.tnext', view).innerHTML = '<button class="btn ghost" data-act="tskip">I can\'t say this one</button>';
+      $('.speak', view).addEventListener('checked', (ev) => {
+        tries++;
+        const ok = ev.detail.score >= 0.75;
+        const best = answer();
+        if (!best?.ok) keep({ ok, given: ev.detail.heardText });
+        if (ok || tries >= 2) nextBtn();
+      });
+    } else $('.tnext', view).innerHTML = '<button class="btn" data-act="tshow">Show the answer</button>';
+  }
+  if (q.say) S.speak(q.say);
+}
+
+function finishTest() {
+  const t = L.TESTS[run.level];
+  const qs = testQs(t);
+  const now = Date.now();
+  const missed = qs.filter((q) => !run.answers[q.id]?.ok);
+  const right = qs.length - missed.length;
+  const pass = right / qs.length >= PASS;
+  const parts = {};
+  for (const q of qs) {
+    parts[q.part] ||= { right: 0, n: 0 };
+    parts[q.part].n++;
+    if (run.answers[q.id]?.ok) parts[q.part].right++;
+  }
+  store.saveTest(t.id, {
+    at: now, right, total: qs.length, pass, parts,
+    wrong: missed.map((q) => ({ id: q.id, given: run.answers[q.id]?.given || '' })),
+    slips: qs.filter((q) => run.answers[q.id]?.slip).map((q) => ({ id: q.id, given: run.answers[q.id].given })),
+    rules: [...new Set(missed.map((q) => q.rule))],
+  });
+  // Missed words go straight into your reviews; grammar becomes cards once you study its rule.
+  for (const q of missed) {
+    if (!q.card) continue;
+    const [tr, en] = q.card;
+    const kind = kindOf(tr);
+    const id = cardId(kind, tr);
+    if (!store.card(id)) store.putCard({ id, kind, tr, en, src: 'study:' + q.rule, rank: t.id, added: now, due: now });
+  }
+  // Passing either test means you've passed A1, the same way the rank exam does it.
+  if (pass && !store.state.progress['rank:A2']) { store.markLesson('rank:A2'); award(XP.exam, null); }
+  run = null;
+  store.setRun(null);
+  history.replaceState(null, '', `#test/${t.id}/result`); // no page change: the rank-up stays on screen
+  testResultView(t);
+}
+
+// Everything the test needs to say about one question.
+function questionText(q, given) {
+  const ask = { choose: q.prompt, write: q.prompt, meaning: `Heard: ${q.say}`, dictate: 'Type what you hear', speak: q.en }[q.type];
+  const right = q.type === 'choose' || q.type === 'meaning' ? q.options[q.a] : q.answers[0];
+  return `<li>
+    <p class="mq">${esc(ask)}</p>
+    <p class="small"><span class="muted">You:</span> <span lang="${L.tag}">${given ? esc(given) : '<i class="muted">no answer</i>'}</span></p>
+    <p class="small"><span class="muted">Right:</span> <b lang="${L.tag}">${esc(right)}</b></p>
+    ${q.type === 'meaning' || q.type === 'dictate' || q.type === 'speak' ? '' : `<p class="muted small">${esc(q.why)}</p>`}
+  </li>`;
+}
+
+function testResultView(t) {
+  const r = store.state.tests[t.id];
+  const qs = testQs(t);
+  const byId = (id) => qs.find((q) => q.id === id);
+  const wrong = r.wrong.map((w) => ({ ...w, q: byId(w.id) })).filter((w) => w.q);
+  const slips = (r.slips || []).map((w) => ({ ...w, q: byId(w.id) })).filter((w) => w.q);
+  const left = openStudy().length;
+  const m = me();
+  const lines = !r.pass
+    ? `You need ${Math.ceil(r.total * PASS)} of ${r.total} to pass. Study what's below, then take it again.`
+    : t.id === 'A1' ? `That's a pass. You're rank ${m.hunter.id} now, level ${m.level}: all of A2 is open, and A1 stays open for practice.`
+    : 'That\'s a pass, so you\'re past A2. B1 isn\'t written yet, so you stay in rank D, with all of A2 open.';
+  view.innerHTML = `<section class="done">
+    <p class="eyebrow">${esc(t.title)} · result</p>
+    <h1 class="big-num">${r.right} / ${r.total}</h1>
+    <h2 class="lesson-title" lang="${L.tag}">${esc(r.pass ? L.congrats : L.chinUp)}</h2>
+    <p class="lede">${esc(lines)}</p>
+    <div class="row">
+      ${left ? `<a class="btn primary" href="#study">${I.arrow}<span>Study my mistakes</span></a>` : ''}
+      <a class="btn${left ? '' : ' primary'}" href="#path">Back to path</a>
+      <button class="btn" data-act="tagain">Take it again</button>
+    </div>
+  </section>
+  <section class="block"><h2 class="h2">By part</h2>
+    <ul class="exam-parts plain">${t.sections.map((sec) => { const p = r.parts[sec.part] || { right: 0, n: 0 }; return `<li><b>${esc(L.partTitle(sec.part))}</b><span>${p.right} of ${p.n}</span></li>`; }).join('')}</ul>
+  </section>
+  ${wrong.length ? `<section class="block"><h2 class="h2">What you got wrong</h2>
+    ${t.sections.map((sec) => {
+    const list = wrong.filter((w) => w.q.part === sec.part);
+    return list.length ? `<h3 class="vgroup">${esc(L.partTitle(sec.part))} · ${list.length}</h3><ul class="mistakes">${list.map((w) => questionText(w.q, w.given)).join('')}</ul>` : '';
+  }).join('')}
+  </section>` : `<p class="note">Nothing wrong at all.</p>`}
+  ${slips.length ? `<section class="block"><h2 class="h2">Right, but watch the accent</h2><ul class="mistakes">${slips.map((w) => questionText(w.q, w.given)).join('')}</ul></section>` : ''}`;
+  local = { tagain: () => { location.hash = `#test/${t.id}`; } };
+}
+
+// The study list: each rule a test caught, in grammar, sounds and vocabulary.
+function studyView(arg = '') {
+  if (!L.TESTS) { location.hash = '#path'; return; }
+  const [id, go] = arg.split('/');
+  if (id && go === 'go') { studySession(id); return; }
+  if (id) { studyRuleView(id); return; }
+  const all = Object.keys(store.state.study).map(L.ruleById).filter(Boolean);
+  const open = new Set(openStudy());
+  view.innerHTML = `
+  <a class="backlink" href="#path">${I.back}<span>Path</span></a>
+  <header class="page-head"><h1>Your mistakes</h1>
+    <p class="lede">${all.length ? `Every rule a test caught you on, ${all.length - open.size} of ${all.length} studied. Read the rule, then build its sentences out loud until they're yours. The sentences join your reviews.` : 'Take a test, and everything you get wrong lands here.'}</p></header>
+  ${all.length ? '' : '<div class="row"><a class="btn primary" href="#test/A1">Take the A1 test</a></div>'}
+  ${CATS.map(([cat, title]) => {
+    const rules = all.filter((r) => r.cat === cat).sort((a, b) => open.has(b.id) - open.has(a.id));
+    return rules.length ? `<section class="block"><h2 class="h2">${title}</h2><ol class="lessons">${rules.map((r) => {
+      const needs = open.has(r.id);
+      return `<li><a class="lrow${needs ? '' : ' done'}" href="#study/${r.id}">
+        <span class="lstate">${needs ? '' : I.check}</span>
+        <span class="ltext"><b>${esc(r.title)}</b><small>${needs ? 'To study' : 'Studied'}</small></span>
+        <span class="tag">${r.rank}</span>
+      </a></li>`;
+    }).join('')}</ol></section>` : '';
+  }).join('')}`;
+  local = {};
+}
+
+function mistakesFor(id) {
+  const out = [];
+  for (const t of Object.values(L.TESTS)) {
+    const r = store.state.tests[t.id];
+    if (!r) continue;
+    const qs = testQs(t);
+    for (const w of r.wrong) { const q = qs.find((x) => x.id === w.id); if (q?.rule === id) out.push({ q, given: w.given }); }
+  }
+  return out;
+}
+
+function studyRuleView(id) {
+  const r = L.ruleById(id);
+  if (!r) { location.hash = '#study'; return; }
+  const mine = mistakesFor(id);
+  const done = !openStudy().includes(id);
+  view.innerHTML = `
+  <a class="backlink" href="#study">${I.back}<span>Your mistakes</span></a>
+  <header class="page-head"><p class="eyebrow">${esc(CATS.find(([c]) => c === r.cat)[1])} · ${r.rank}${done ? ' · studied' : ''}</p><h1>${esc(r.title)}</h1></header>
+  ${r.explain.map((t) => `<p class="lede">${esc(t)}</p>`).join('')}
+  <table class="pattern"><tbody>${r.table.map(([tr, en]) => `<tr><td><button class="linkbtn" data-act="play" data-text="${esc(tr)}" lang="${L.tag}">${esc(tr)}</button></td><td>${esc(en)}</td></tr>`).join('')}</tbody></table>
+  ${mine.length ? `<section class="block"><h2 class="h2">What you got wrong</h2><ul class="mistakes">${mine.map((w) => questionText(w.q, w.given)).join('')}</ul></section>` : ''}
+  <section class="block"><h2 class="h2">Sentences</h2>
+    <div class="newwords">${r.examples.map((it) => `<button class="newword" data-act="play" data-text="${esc(it.tr)}"><b lang="${L.tag}">${esc(it.tr)}</b><span>${esc(it.en)}</span></button>`).join('')}</div>
+  </section>
+  <div class="next"><a class="btn primary" href="#study/${id}/go">${I.mic}<span>${done ? 'Practise again' : 'Build these out loud'}</span></a></div>`;
+  local = {};
+}
+
+function studySession(id) {
+  const r = L.ruleById(id);
+  if (!r) { location.hash = '#study'; return; }
+  if (!session || session.id !== 'ST:' + id || session.finished) {
+    const drill = { id: 'study:' + id, title: r.title, goal: r.title, intro: r.explain, table: r.table, items: r.examples };
+    session = { id: 'ST:' + id, kind: 'drill', study: r, back: `#study/${id}`, drill, steps: r.examples.map((it, i) => ({ type: 'build', it, n: i + 1 })), i: 0, grades: {}, requeued: new Set(), ok: 0 };
+  }
+  drawStep();
+}
+
+// A rule counts as studied once most of its sentences came out right the first time.
+function finishStudy(s) {
+  const r = s.study;
+  const n = r.examples.length;
+  const passed = s.ok / n >= 0.7;
+  const first = openStudy().includes(r.id);
+  const now = Date.now();
+  let saved = 0;
+  for (const it of r.examples) {
+    const tr = fill(it.tr);
+    const kind = kindOf(tr);
+    const id = cardId(kind, tr);
+    if (store.card(id)) continue;
+    store.putCard(srs.grade({ id, kind, tr, en: fill(it.en), src: 'study:' + r.id, rank: r.rank, added: now }, 2, now));
+    saved++;
+  }
+  if (passed && first) store.studyDone(r.id);
+  store.log('lessons');
+  award(first && passed ? XP.drill : XP.again);
+  const next = openStudy()[0];
+  view.innerHTML = `<section class="done"><p class="eyebrow">Study · ${esc(r.title)}</p><h1 lang="${L.tag}">${esc(passed ? L.praise : L.chinUp)}</h1>
+    <p class="lede">You built ${s.ok} of ${n} on the first try. ${passed ? 'This rule is done.' : 'Get most of them right the first time to clear it.'}${saved ? ` Saved ${plural(saved, 'sentence', 'sentences')} to your reviews.` : ''}</p>
+    <div class="row">
+      ${passed ? '' : `<a class="btn primary" href="#study/${r.id}">Read it again</a>`}
+      ${next && next !== r.id ? `<a class="btn${passed ? ' primary' : ''}" href="#study/${next}">${I.arrow}<span>Next: ${esc(L.ruleById(next).title)}</span></a>` : ''}
+      <a class="btn" href="#study">All my mistakes</a>
+    </div></section>`;
 }
 
 /* ---------- Themes ---------- */
@@ -1338,8 +1701,8 @@ const wordN = (t, w) => store.state.words[wordKey(t, w)]?.n || 0;
 const learnedIn = (t) => t.words.filter((w) => wordN(t, w) >= NEED).length;
 const themeDone = (t) => learnedIn(t) === t.words.length;
 // Themes open one after the other, inside your rank and the ranks below it.
-const themeOpen = (t, m = me()) => rankIndex(t.rank) <= rankIndex(m.rank.id) && THEMES.slice(0, THEMES.indexOf(t)).every(themeDone);
-const currentTheme = (m = me()) => THEMES.find((t) => themeOpen(t, m) && !themeDone(t));
+const themeOpen = (t, m = me()) => rankIndex(t.rank) <= rankIndex(m.rank.id) && THEMES.slice(0, THEMES.indexOf(t)).filter((x) => x.rank === t.rank).every(themeDone);
+const currentTheme = (m = me()) => THEMES.find((t) => t.rank === m.rank.id && themeOpen(t, m) && !themeDone(t)) || THEMES.find((t) => themeOpen(t, m) && !themeDone(t));
 
 function themesView() {
   const m = me();
@@ -1358,14 +1721,14 @@ function themesView() {
     const done = themeDone(t);
     const n = learnedIn(t);
     const prev = THEMES[i - 1];
-    return `<li><a class="lrow${done ? ' done' : ''}${cur?.id === t.id ? ' is-next' : ''}${open ? '' : ' locked'}" href="${open ? '#theme/' + t.id : '#themes'}"${open ? '' : ` data-act="tlocked" data-prev="${esc(prev?.title || '')}"`}>
+    return `<li><a class="lrow${done ? ' done' : ''}${cur?.id === t.id ? ' is-next' : ''}${open ? '' : ' locked'}" href="${open ? '#theme/' + t.id : '#themes'}"${open ? '' : ` data-act="tlocked" data-prev="${esc(prev?.title || '')}"${rankIndex(t.rank) > rankIndex(m.rank.id) ? ' data-rank="1"' : ''}`}>
       <span class="lstate">${done ? I.check : open ? '' : I.lock}</span>
       <span class="ltext"><b>${esc(t.title)}</b><small lang="${L.tag}">${esc(t.tr)}${open && !done ? ` · ${n} of ${t.words.length} learned` : ''}</small></span>
       <span class="tag">${t.rank}</span>
     </a></li>`;
   }).join('')}</ol>
   ${L.a2ThemesNote ? `<p class="muted small">${esc(L.a2ThemesNote)}</p>` : ''}`;
-  local = { tlocked: (el) => toast(`Learn every word in ${el.dataset.prev} first. This theme opens right after.`) };
+  local = { tlocked: (el) => toast(el.dataset.rank ? `Opens when you pass the ${m.rank.id} exam.` : `Learn every word in ${el.dataset.prev} first. This theme opens right after.`) };
 }
 
 let themeUI = { id: null };
@@ -1465,7 +1828,7 @@ function drawTheme(t) {
         const alts = await micListen(el, (said) => { ask.textContent = said; });
         if (!alts) { if (el.isConnected) ask.textContent = 'Tap, then say it'; return; }
         if (!alts.length) { themeUI.tries.set(k, { msg: nothingHeard() }); drawTheme(t); return; }
-        const res = S.compare(w.tr, alts);
+        const res = [w.tr, L.bare?.(w.tr)].filter(Boolean).map((t) => S.compare(t, alts)).sort((a, b) => b.score - a.score)[0];
         const right = res.score >= 0.75;
         store.log('spoken');
         if (right) learned(w);
@@ -1509,6 +1872,7 @@ function topicOf(c) {
   if (drillById(src)) return 'Grammar';
   if (dialogueById(src)) return 'Conversations';
   if (storyById(src)) return 'Stories';
+  if (src.startsWith('study:')) return 'Mistakes';
   if (src === 'known') return 'Greetings';
   if (src === 'mine') return 'Added by me';
   return 'Other';
@@ -1620,7 +1984,7 @@ function detailView(tr, en, { card = null, note = '' } = {}) {
     <p class="muted small">The highlighted syllable is a little louder and higher. ${esc(L.stressNote(words))}</p>
   </section>
 
-  ${tips.size ? `<section class="block"><h3>Sounds to watch</h3><ul class="tips">${[...tips.values()].map((t) => `<li><span class="letter" lang="${L.tag}">${t.k === '2x' ? 'kk' : esc(t.k)}</span><p>${esc(t.tip)}</p></li>`).join('')}</ul></section>` : ''}
+  ${tips.size ? `<section class="block"><h3>Sounds to watch</h3><ul class="tips">${[...tips.values()].map((t) => `<li><span class="letter${t.k.length > 2 ? ' wide' : ''}" lang="${L.tag}">${t.k === '2x' ? 'kk' : esc(t.k)}</span><p>${esc(t.tip)}</p></li>`).join('')}</ul></section>` : ''}
 
   <section class="block"><h3>Say it</h3>${speakHTML(tr)}</section>
 
@@ -1698,7 +2062,7 @@ function pronounceView() {
   <section class="block">
     <h2 class="h2">Sound guide</h2>
     <ul class="sounds">${P.SOUNDS.map((s) => `<li>
-      <span class="letter" lang="${L.tag}">${s.k === '2x' ? 'kk' : esc(s.k)}</span>
+      <span class="letter${s.k.length > 2 ? ' wide' : ''}" lang="${L.tag}">${s.k === '2x' ? 'kk' : esc(s.k)}</span>
       <div><p class="like">Sounds like <b>${esc(s.say)}</b></p><p>${esc(s.tip)}</p></div>
       <button class="btn ghost small" data-act="play" data-text="${esc(s.ex)}">${I.play}<span lang="${L.tag}">${esc(s.ex)}</span><small>${esc(s.exEn)}</small></button>
     </li>`).join('')}</ul>
@@ -1927,7 +2291,7 @@ function settingsView() {
 
   <section class="block">
     <h2 class="h2">Start over</h2>
-    <button class="btn ghost danger" data-act="reset">Erase all progress</button>
+    <button class="btn ghost danger" data-act="reset">Erase all ${L.name} progress</button>
   </section>
 
   <p class="muted small foot">Konuş · Free and open. Your recordings never leave this device.</p>`;
@@ -1999,6 +2363,7 @@ function settingsView() {
     try {
       const data = JSON.parse(await f.text());
       if (!data.cards) throw new Error('bad');
+      if ((data.lang || 'tr') !== L.id) { $('#bk-msg').textContent = `That backup is for ${PACKS[data.lang || 'tr'].name}. Switch language with the flag first.`; return; }
       store.replaceAll(data);
       $('#bk-msg').textContent = `Restored ${Object.keys(data.cards).length} cards.`;
     } catch { $('#bk-msg').textContent = 'That file is not a Konuş backup.'; }
@@ -2043,7 +2408,7 @@ function settingsView() {
     },
     signout: () => sync.signOut(),
     export() {
-      const blob = new Blob([JSON.stringify(store.state, null, 1)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify({ ...store.state, lang: L.id }, null, 1)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `konus-backup-${L.backupSuffix}${new Date().toLocaleDateString('en-CA')}.json`;
@@ -2051,7 +2416,7 @@ function settingsView() {
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     },
     reset(el) {
-      if (!reset.armed) { reset.armed = true; el.textContent = 'Tap again to erase everything'; return; }
+      if (!reset.armed) { reset.armed = true; el.textContent = `Tap again to erase all your ${L.name}`; return; }
       store.reset();
       el.textContent = 'Erased';
     },
@@ -2137,10 +2502,10 @@ function gateView(st) {
 
 /* ---------- router and shell ---------- */
 
-const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, practise: practiseView, drill: drillView, talk: talkView, story: storyView, exam: examView, themes: themesView, theme: themeView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, letters: lettersView, add: addView, settings: settingsView };
-const TAB_OF = { today: 'today', review: 'today', practise: 'vocab', path: 'path', lesson: 'path', drill: 'path', talk: 'path', story: 'path', exam: 'path', themes: 'themes', theme: 'themes', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', letters: 'pronounce', settings: '' };
-const SESSIONS = new Set(['lesson', 'review', 'practise', 'drill']);
-const FOCUS = new Set(['lesson', 'review', 'practise', 'drill', 'talk', 'story', 'exam']);
+const ROUTES = { today: todayView, path: pathView, lesson: lessonView, review: reviewView, practise: practiseView, drill: drillView, talk: talkView, story: storyView, exam: examView, test: testView, study: studyView, themes: themesView, theme: themeView, vocab: vocabView, item: itemView, word: wordView, pronounce: pronounceView, letters: lettersView, add: addView, settings: settingsView };
+const TAB_OF = { today: 'today', review: 'today', practise: 'vocab', path: 'path', lesson: 'path', drill: 'path', talk: 'path', story: 'path', exam: 'path', test: 'path', study: 'path', themes: 'themes', theme: 'themes', vocab: 'vocab', item: 'vocab', add: 'vocab', word: 'pronounce', pronounce: 'pronounce', letters: 'pronounce', settings: '' };
+const SESSIONS = new Set(['lesson', 'review', 'practise', 'drill', 'study']);
+const FOCUS = new Set(['lesson', 'review', 'practise', 'drill', 'talk', 'story', 'exam', 'test']);
 let cleanup = null;
 let current = '';
 
@@ -2173,6 +2538,8 @@ function shell() {
   $('#tabs').innerHTML = [['today', 'Today', I.today], ['path', 'Path', I.path], ['themes', 'Themes', I.themes], ['vocab', 'Vocab', I.vocab], ['pronounce', 'Pronounce', I.pron]]
     .map(([k, t, ic]) => `<a href="#${k}" data-tab="${k}">${ic}<span>${t}</span></a>`).join('');
   $('#settings-link').innerHTML = I.sliders;
+  $('#flip').addEventListener('click', flipLang);
+  drawHead();
   drawLevelChip();
   let open = null;
   sync.onStatus((st) => {
@@ -2184,6 +2551,42 @@ function shell() {
     el.textContent = map[st.state] || '';
     el.className = `sync ${st.state}`;
   });
+}
+
+// The brand says which language you're in; the flag is the one you'd switch to.
+function drawHead() {
+  const other = PACKS[L.other];
+  const brand = $('.brand');
+  brand.textContent = L.brand;
+  brand.lang = L.tag;
+  const flip = $('#flip');
+  flip.innerHTML = other.flag;
+  flip.setAttribute('aria-label', `Switch to ${other.name}`);
+  flip.title = `Switch to ${other.name}`;
+}
+
+// Everything you learn is kept per language: swap the pack, the saved data and the sync path.
+function flipLang() {
+  S.cancelListening();
+  stopRecording({ keep: false });
+  S.stopSpeaking();
+  clearTimeout(redrawTimer);
+  sync.leaveLang();
+  store.save();
+  const stay = ['today', 'path', 'themes', 'vocab', 'pronounce', 'settings'].includes(current);
+  useLang(L.other);
+  refreshPath();
+  session = talk = exam = run = null;
+  shownRank = null;
+  themeUI = { id: null };
+  Object.assign(vocabUI, { q: '', filter: 'all', rank: 'all', topic: 'all' });
+  pronUI.letter = 'all';
+  voiceUI.sample = 0;
+  store.reload();
+  seedKnown();
+  drawHead();
+  sync.enterLang();
+  if (stay) render(); else location.hash = '#today';
 }
 
 let redrawTimer = null;

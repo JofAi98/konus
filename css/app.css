@@ -406,7 +406,8 @@ input[type="range"] { width: 100%; accent-color: var(--cobalt); }
 .opt:disabled { cursor: default; }
 .opt.right { border-color: var(--good); background: var(--good-soft); color: var(--good); }
 .opt.wrong { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
-.opts.col .opt[lang="tr"] { font: 500 1.1rem var(--f-display); }
+.opts.col .opt[lang="tr"], .opts.col .opt[lang="es"] { font: 500 1.1rem var(--f-display); }
+.opt.picked { border-color: var(--cobalt); background: var(--cobalt-soft); }
 
 .newwords { display: flex; flex-wrap: wrap; gap: 8px; }
 .newword { display: inline-flex; align-items: baseline; gap: 8px; padding: 7px 12px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); color: var(--ink); cursor: pointer; }
@@ -462,10 +463,28 @@ body.locked .tabs, body.locked .top { display: none; }
 .exam-parts { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .exam-parts li { display: flex; flex-direction: column; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .exam-parts span { font-size: 14px; color: var(--muted); }
+.exam-parts.plain li { flex-direction: row; justify-content: space-between; gap: 12px; }
 .exnext { display: flex; flex-direction: column; gap: 10px; }
 .exnext:empty { display: none; }
 
+/* Placement tests */
+.accents { display: flex; flex-wrap: wrap; gap: 6px; }
+.tnext:empty { display: none; }
+.mistakes { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.mistakes li { display: flex; flex-direction: column; gap: 2px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.mq { font-weight: 500; margin-bottom: 2px; }
+.lessons:empty { display: none; }
+
+.letter.wide { font-size: 13px; text-align: center; }
+
+/* The language flag */
+.flip { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; padding: 0; border: 0; background: none; border-radius: var(--r-s); cursor: pointer; }
+.flip:hover { background: var(--sunk); }
+.flip svg { display: block; width: 27px; height: 18px; border-radius: 3px; box-shadow: 0 0 0 1px var(--line); }
+
 @media (max-width: 480px) {
+  .top-inner { gap: 6px; }
+  .sync.on { font-size: 0; } /* the dot says it: the flag needs the room */
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stats div:nth-child(3) { border-left: 0; }
   .stats div:nth-child(n+3) { border-top: 1px solid var(--line); }

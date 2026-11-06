@@ -1,6 +1,8 @@
 # Konuş
 
-Learn to speak Turkish from zero. Speaking first: listen, echo, understand without text, then say it from memory. Built for an Italian speaker, in English.
+Learn to speak Turkish, and now Spanish too, from zero. Speaking first: listen, echo, understand without text, then say it from memory. Built for an Italian speaker, in English.
+
+The flag at the top switches language instantly. Each language keeps its own progress, cards, levels, streak and settings.
 
 - 12 units, 29 lessons, 12 Build drills (grammar you say out loud), 12 dialogues you play a part in, 6 listening stories
 - Themes: 15 A1 topics of 10 words each, one at a time. Hear them from English, then say them in a mini test; one right answer out loud and a word goes to your vocab
@@ -67,6 +69,12 @@ node tools/audio-texts.mjs | python3 tools/make-audio.py emel
 
 To record the whole course in a multilingual voice, use its id from `js/voices.js` (for example `ava`), then set `full: true` for it there.
 
+Spanish works the same way, with Elvira for the whole course and Álvaro and Ximena for samples:
+
+```bash
+node tools/audio-texts-es.mjs | python3 tools/make-audio.py elvira
+```
+
 ## Levels and ranks
 
 Practice earns XP (a lesson or drill 30, a dialogue 25, a story 20, each review 2, each sentence said out loud 1 or 2, plus 10 for the first practice of the day). Only practice at your current rank counts: lower-rank material stays open but earns nothing. Every level costs 150 XP, and each rank holds 30 levels (A1 is 1 to 30, A2 is 31 to 60...). The last level of a rank is its cap, where its exam opens. XP is logged per day as `xp`, plus `xp_A2`, `xp_B1`... for ranks above A1.
@@ -77,10 +85,21 @@ The streak is weekly. A day counts once it earns 30 XP; a week (Monday to Sunday
 
 Hunter ranks sit on top of the European levels: F (tutorial), E (A1), E+ (A1+, level 20), D (A2), D+ (A2+, level 50), C (B1), C+ (level 80), B (B2), B+ (level 110), A (C1), A+ (level 140), S (C2). The tutorial is the three Sounds lessons, the first Build drill and the first dialogue.
 
+## Languages
+
+Each language is a pack: its course, sounds, voices and the words the app says in it. `js/lang.js` holds the active pack, and everything else reads it through live bindings, so switching needs no reload. Turkish is in `js/tr-pack.js` and the files next to it; Spanish is in `js/es/`.
+
+Progress is kept apart. Turkish stays where it always was: `konus.v1` on the device, `users/<uid>/cards` and `meta` in Firestore. Spanish uses `konus.es.v1` and `users/<uid>/langs/es/`. Name, speed and volume follow you across languages on the same device.
+
+Spanish adds an A2 course and two placement tests (`js/es/tests.js`), reachable from Path and Today. Every question names a rule in `js/es/rules.js`. A wrong answer opens that rule in the study section, under Path, grouped into grammar, sounds and vocabulary; missed words go straight to your reviews. Passing either test sets `rank:A2`, the same as the A1 exam. There's no B1 course yet, so passing the A2 test doesn't move you to B1.
+
 ## Files
 
 | File | What it does |
 |---|---|
+| `js/lang.js` | The active language and the switch between packs |
+| `js/tr-pack.js` | Turkish: the words the app says, plus the pack's other settings |
+| `js/es/` | Spanish: pack, sounds, course, drills, dialogues, stories, themes, tests, rules |
 | `js/course.js` | All lessons. Add a unit here and push to publish it. |
 | `js/drills.js` | Build drills: a grammar pattern and sentences to build from English |
 | `js/dialogues.js` | Talk: short scenes, your lines marked `you` |

@@ -345,7 +345,19 @@ function numToTr(n) {
   return String(n);
 }
 
-const NUMBERS = { tr: numToTr };
+const UNITS = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidós', 'veintitrés', 'veinticuatro', 'veinticinco', 'veintiséis', 'veintisiete', 'veintiocho', 'veintinueve'];
+const DECENAS = ['', '', '', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+const CIENTOS = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+function numToEs(n) {
+  if (n < 30) return UNITS[n];
+  if (n < 100) return [DECENAS[Math.floor(n / 10)], n % 10 ? 'y ' + UNITS[n % 10] : ''].filter(Boolean).join(' ');
+  if (n === 100) return 'cien';
+  if (n < 1000) return [CIENTOS[Math.floor(n / 100)], n % 100 ? numToEs(n % 100) : ''].filter(Boolean).join(' ');
+  if (n < 1000000) { const t = Math.floor(n / 1000); return [t > 1 ? numToEs(t) : '', 'mil', n % 1000 ? numToEs(n % 1000) : ''].filter(Boolean).join(' '); }
+  return String(n);
+}
+
+const NUMBERS = { tr: numToTr, es: numToEs };
 
 export function normWords(s) {
   return P.trLower(s).replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
@@ -387,7 +399,9 @@ function alignWords(target, heard) {
 }
 
 // Spelled as it sounds, so a letter swap is a sound swap.
-const PAIRS = { tr: { 'ş>s': 'ş', 'ç>c': 'ç', 'ç>s': 'ç', 'c>ç': 'c', 'ı>i': 'ı', 'i>ı': 'ı', 'ö>o': 'ö', 'ü>u': 'ü', 'ö>e': 'ö', 'ü>i': 'ü', 'u>ü': 'ü', 'o>ö': 'ö', 'z>s': 'z', 's>z': 's', 'k>g': 'k', 'g>k': 'g' } };
+const PAIRS = { tr: { 'ş>s': 'ş', 'ç>c': 'ç', 'ç>s': 'ç', 'c>ç': 'c', 'ı>i': 'ı', 'i>ı': 'ı', 'ö>o': 'ö', 'ü>u': 'ü', 'ö>e': 'ö', 'ü>i': 'ü', 'u>ü': 'ü', 'o>ö': 'ö', 'z>s': 'z', 's>z': 's', 'k>g': 'k', 'g>k': 'g' },
+  // What an Italian mouth does to Spanish: "th" turned to s, ñ flattened, a rolled r lost.
+  es: { 'z>s': 'z', 'c>s': 'ce, ci', 'ñ>n': 'ñ', 'j>g': 'j', 'j>y': 'j', 'g>y': 'ge, gi', 'r>l': 'rr' } };
 const tipFor = (k) => P.SOUNDS.find((s) => s.k === k)?.tip;
 
 function soundHints(target, heard) {
@@ -404,8 +418,8 @@ function soundHints(target, heard) {
     }
     if (i > 0 && d[i][j] === d[i - 1][j] + 1) {
       const c = target[i - 1];
-      if (c === 'h') hints.push({ expect: 'h', got: '', tip: tipFor('h') });
-      else if (target[i - 2] === c || target[i] === c) hints.push({ expect: c + c, got: c, tip: tipFor('2x') });
+      if (c === 'h' && L.id === 'tr') hints.push({ expect: 'h', got: '', tip: tipFor('h') });
+      else if (target[i - 2] === c || target[i] === c) hints.push({ expect: c + c, got: c, tip: tipFor(P.heldKey(c)) });
       i--; continue;
     }
     j--;

@@ -2,8 +2,9 @@
 // its voices and the words the app says in it. Everything else in the app is shared and reads
 // the active pack through the live bindings below, so switching needs no reload.
 import turkish from './tr-pack.js';
+import spanish from './es/pack.js';
 
-export const PACKS = { tr: turkish };
+export const PACKS = { tr: turkish, es: spanish };
 const KEY = 'konus.lang';
 
 export let L, P, LESSONS, lessonById, COURSE_WORDS, DRILLS, drillById, DIALOGUES, dialogueById, WHO,

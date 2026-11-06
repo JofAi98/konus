@@ -2,6 +2,8 @@
 
     node tools/audio-texts.mjs | python3 tools/make-audio.py emel
     node tools/audio-texts.mjs samples | python3 tools/make-audio.py ava andrew
+    node tools/audio-texts-es.mjs | python3 tools/make-audio.py elvira
+    node tools/audio-texts-es.mjs samples | python3 tools/make-audio.py alvaro ximena
 
 Writes audio/<voice>/<hash>.mp3 and audio/<voice>/index.json (the hashes it has).
 Files that already exist are kept, so re-running only records what's new.
@@ -15,6 +17,9 @@ import edge_tts
 
 VOICES = {
     'emel': 'tr-TR-EmelNeural',
+    'elvira': 'es-ES-ElviraNeural',
+    'alvaro': 'es-ES-AlvaroNeural',
+    'ximena': 'es-ES-XimenaNeural',
     'ahmet': 'tr-TR-AhmetNeural',  # returned no audio in Oct 2026; try again later
     'ava': 'en-US-AvaMultilingualNeural',
     'andrew': 'en-US-AndrewMultilingualNeural',

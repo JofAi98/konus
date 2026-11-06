@@ -8,6 +8,8 @@ const blank = () => ({
   progress: {},
   words: {},
   stats: { days: {} },
+  tests: {}, // placement results, by level
+  study: {}, // rules to study after a test: { at, done }
   settings: { name: 'Giosuè', showSpelling: true, recordedVoice: L.defaultVoice, voiceURI: '', rate: 0.9, volume: 0.7, settingsAt: 0 },
   metaAt: 0,
 });
@@ -80,6 +82,38 @@ export const store = {
     changed('card', id, false);
   },
 
+  // Write this language to the device now: it is about to be swapped for another.
+  save() {
+    clearTimeout(saveTimer);
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
+  },
+  // Load the language that has just become active. Your name, speed and volume come along.
+  reload() {
+    const { name, rate, volume } = state.settings;
+    KEY = L.storeKey;
+    state = load();
+    state.settings = { ...state.settings, name, rate, volume };
+    changed('all', null, true);
+  },
+
+  // A finished placement test. Each rule it caught goes on the study list, or back on it.
+  saveTest(level, result) {
+    state.tests[level] = result;
+    for (const id of result.rules) state.study[id] = { ...state.study[id], at: result.at, level };
+    state.metaAt = Date.now();
+    changed('meta', null, false);
+  },
+  studyDone(id) {
+    state.study[id] = { ...state.study[id], done: Date.now() };
+    state.metaAt = Date.now();
+    changed('meta', null, false);
+  },
+  // A test in progress, kept on this device so a closed app doesn't lose it.
+  setRun(run) {
+    state.run = run;
+    persist();
+  },
+
   markSeeded(batch) {
     state.seeded = batch;
     persist();
@@ -124,6 +158,13 @@ export const store = {
       const mine = state.stats.days[day] || (state.stats.days[day] = {});
       for (const [k, n] of Object.entries(v)) mine[k] = Math.max(mine[k] || 0, n);
     }
+    for (const [k, v] of Object.entries(remote.tests || {})) {
+      if (!state.tests[k] || v.at > state.tests[k].at) state.tests[k] = v;
+    }
+    for (const [k, v] of Object.entries(remote.study || {})) {
+      const mine = state.study[k] || {};
+      state.study[k] = { ...v, at: Math.max(mine.at || 0, v.at || 0), done: Math.max(mine.done || 0, v.done || 0) };
+    }
     if (remote.settings && (remote.settings.settingsAt || 0) > (state.settings.settingsAt || 0)) {
       const { voiceURI, rate, volume } = state.settings;
       state.settings = { ...state.settings, ...remote.settings, voiceURI, rate, volume };
@@ -132,7 +173,7 @@ export const store = {
   },
   metaForSync() {
     const { name, showSpelling, recordedVoice, settingsAt } = state.settings;
-    return { progress: state.progress, words: state.words, stats: state.stats, settings: { name, showSpelling, recordedVoice, settingsAt }, updatedAt: Date.now() };
+    return { progress: state.progress, words: state.words, stats: state.stats, tests: state.tests, study: state.study, settings: { name, showSpelling, recordedVoice, settingsAt }, updatedAt: Date.now() };
   },
 
   replaceAll(next) {

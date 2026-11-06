@@ -30,11 +30,13 @@ const NEXT_RANK = {
 
 export default {
   id: 'tr',
+  other: 'es', // the language the flag switches to
   name: 'Turkish',
   tag: 'tr', // the html lang attribute
   locale: 'tr-TR', // speech recognition and the device voice
   voiceRe: /^tr/i,
   brand: 'Konuş',
+  flag: '<svg viewBox="0 0 30 20" aria-hidden="true"><rect width="30" height="20" fill="#E30A17"/><circle cx="11.25" cy="10" r="5" fill="#fff"/><circle cx="12.5" cy="10" r="4" fill="#E30A17"/><path fill="#fff" d="M15.3 10l4.5-1.46-2.78 3.83V7.63l2.78 3.83z"/></svg>',
   storeKey: 'konus.v1',
   cloudPath: [], // where this language lives under your account
   recPrefix: '', // keeps recordings of look-alike words apart

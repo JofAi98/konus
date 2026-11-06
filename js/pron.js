@@ -9,6 +9,7 @@ export const clean = (w) => trLower(w).replace(/[^a-zçğıöşüâîû]/g, '');
 const isV = (c) => !!c && VOWELS.includes(c);
 // What the speech check treats as the same word; Turkish spelling leaves nothing to fold.
 export const fold = (w) => w;
+export const heldKey = () => '2x'; // a held double letter, in SOUNDS
 
 // Words whose stress is NOT on the last syllable (index from the start).
 // Everything else follows the default rule: last syllable.

@@ -173,6 +173,20 @@ function stop() {
   unsubCards = unsubMeta = null;
 }
 
+// Changing language: send what's waiting, and stop listening before the store is swapped.
+// Anything that couldn't be sent goes out the next time this language opens.
+export function leaveLang() {
+  if (!user) return;
+  clearTimeout(timer);
+  flush();
+  pending.clear();
+  metaDirty = false;
+  stop();
+}
+export function enterLang() {
+  if (user) start();
+}
+
 function schedule(delay = 1500) {
   clearTimeout(timer);
   timer = setTimeout(flush, delay);
