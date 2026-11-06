@@ -8,7 +8,7 @@ const blank = () => ({
   progress: {},
   words: {},
   stats: { days: {} },
-  settings: { name: 'Giosuè', showSpelling: true, recordedVoice: 'emel', voiceURI: '', rate: 0.9, settingsAt: 0 },
+  settings: { name: 'Giosuè', showSpelling: true, recordedVoice: 'emel', voiceURI: '', rate: 0.9, volume: 0.7, settingsAt: 0 },
   metaAt: 0,
 });
 
@@ -125,8 +125,8 @@ export const store = {
       for (const [k, n] of Object.entries(v)) mine[k] = Math.max(mine[k] || 0, n);
     }
     if (remote.settings && (remote.settings.settingsAt || 0) > (state.settings.settingsAt || 0)) {
-      const { voiceURI, rate } = state.settings;
-      state.settings = { ...state.settings, ...remote.settings, voiceURI, rate };
+      const { voiceURI, rate, volume } = state.settings;
+      state.settings = { ...state.settings, ...remote.settings, voiceURI, rate, volume };
     }
     changed('meta', null, true);
   },

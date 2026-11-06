@@ -1917,6 +1917,8 @@ function settingsView() {
     <p class="muted small">Pick a sentence, play it in each voice, and choose the one you want to learn from.</p>
     <div class="filters samples" aria-label="Sample sentence">${SAMPLES.map((t, i) => `<button class="filter${i === voiceUI.sample ? ' on' : ''}" data-act="sample" data-i="${i}" lang="tr">${esc(t)}</button>`).join('')}</div>
     <div id="voices"></div>
+    <label for="set-volume">Volume <output id="volume-out">${Math.round((s.volume ?? 0.7) * 100)}%</output></label>
+    <input id="set-volume" type="range" min="0" max="1" step="0.05" value="${s.volume ?? 0.7}">
     <label for="set-rate">Speed <output id="rate-out">${Math.round(s.rate * 100)}%</output></label>
     <input id="set-rate" type="range" min="0.6" max="1.1" step="0.05" value="${s.rate}">
     <details class="howto"><summary>Device voice settings</summary>
@@ -2011,6 +2013,8 @@ function settingsView() {
   $('#set-name').addEventListener('change', (e) => store.setSettings({ name: e.target.value.trim() || 'Giosuè' }));
   $('#set-spell').addEventListener('change', (e) => store.setSettings({ showSpelling: e.target.checked }));
   $('#set-voice')?.addEventListener('change', (e) => { store.setSettings({ voiceURI: e.target.value }); S.setVoice(e.target.value, settings().rate); });
+  $('#set-volume').addEventListener('input', (e) => { $('#volume-out').textContent = Math.round(e.target.value * 100) + '%'; S.setVolume(+e.target.value); });
+  $('#set-volume').addEventListener('change', (e) => { store.setSettings({ volume: +e.target.value }); S.speak(SAMPLES[voiceUI.sample]); });
   $('#set-rate').addEventListener('input', (e) => { $('#rate-out').textContent = Math.round(e.target.value * 100) + '%'; });
   $('#set-rate').addEventListener('change', (e) => { store.setSettings({ rate: +e.target.value }); S.setVoice(settings().voiceURI, +e.target.value); });
   $('#imp-file').addEventListener('change', async (e) => {
@@ -2266,6 +2270,7 @@ window.addEventListener('speech-error', (e) => {
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
 
 S.setVoice(settings().voiceURI, settings().rate);
+S.setVolume(settings().volume);
 S.setRecordedVoice(settings().recordedVoice);
 seedKnown();
 shell();

@@ -42,10 +42,12 @@ function playFile(voice, text, slow, fast = false) {
   return speed === 1 && audioCtx() ? playDecoded(url) : playElement(url, speed);
 }
 
-function playElement(url, speed) {
+function playElement(url, speed, routed = true) {
   return new Promise((resolve) => {
     stopSpeaking();
     const a = new Audio(url);
+    // iPhone ignores an element's own volume, so it goes through the gain as well.
+    if (routed && audioCtx()) { ctx.resume(); ctx.createMediaElementSource(a).connect(gain); } else a.volume = volume;
     const me = {
       stop() {
         a.onerror = null;
@@ -69,10 +71,21 @@ function playElement(url, speed) {
 // iPhone: after an <audio> element plays, the next speech check can stay deaf.
 // Playing through Web Audio leaves the microphone alone.
 let ctx = null;
+let gain = null;
+let volume = 0.7;
 function audioCtx() {
   const AC = window.AudioContext || window.webkitAudioContext;
-  if (!ctx && AC) ctx = new AC();
+  if (!ctx && AC) {
+    ctx = new AC();
+    gain = ctx.createGain();
+    gain.gain.value = volume;
+    gain.connect(ctx.destination);
+  }
   return ctx;
+}
+export function setVolume(v) {
+  volume = v ?? 0.7;
+  if (gain) gain.gain.value = volume;
 }
 
 function playDecoded(url) {
@@ -91,11 +104,11 @@ function playDecoded(url) {
         if (ctx.state !== 'running') throw new Error(ctx.state);
         src = ctx.createBufferSource();
         src.buffer = buf;
-        src.connect(ctx.destination);
+        src.connect(gain);
         src.onended = () => { if (player === me) player = null; resolve(); };
         src.start();
       } catch {
-        if (player === me) { player = null; playElement(url, 1).then(resolve); } else resolve();
+        if (player === me) { player = null; playElement(url, 1, false).then(resolve); } else resolve();
       }
     })();
   });
@@ -147,14 +160,26 @@ function pickVoice() {
 
 // iPhone mutes web speech when the phone is on silent and drops speech that
 // doesn't start from a tap. Call this from the first tap: it sets an audio session
-// that ignores the silent switch and warms up the voice. The session stays
-// play-and-record for good: once a recorded voice has played in plain playback,
-// iPhone can leave the next speech check deaf, with the mic on and no events.
+// that ignores the silent switch and warms up the voice.
 let unlocked = false;
+const setSession = (type) => { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch { /* older Safari */ } };
+
+// iPhone: play-and-record uses the call volume, which ignores the phone's media
+// volume, so it stays on only while the microphone is in use.
+let micUsers = 0;
+async function micOn() {
+  if (micUsers++) return;
+  if (ctx?.state === 'running') await Promise.race([ctx.suspend(), new Promise((r) => setTimeout(r, 150))]);
+  if (micUsers) setSession('play-and-record');
+}
+function micOff() {
+  if (micUsers && !--micUsers) setSession('playback');
+}
+
 export function unlockAudio() {
   if (unlocked) return;
   unlocked = true;
-  try { if (navigator.audioSession) navigator.audioSession.type = SR ? 'play-and-record' : 'playback'; } catch { /* older Safari */ }
+  if (!micUsers) setSession('playback');
   try { audioCtx()?.resume(); } catch { /* no Web Audio */ }
   if (!navigator.audioSession) try {
     const n = 800;
@@ -197,6 +222,7 @@ function deviceSpeak(text, { slow = false, fast = false } = {}) {
       const v = pickVoice();
       if (v) u.voice = v;
       u.rate = slow ? Math.max(0.45, rate * 0.62) : fast ? rate * 1.2 : rate;
+      u.volume = volume;
       // Safari sometimes never fires "end", which left buttons waiting forever.
       const guard = setTimeout(() => { if (current === u) current = null; resolve(); }, 3000 + (text.length * 160) / u.rate);
       u.onend = () => { clearTimeout(guard); if (current === u) current = null; resolve(); };
@@ -246,11 +272,12 @@ export function listen({ onInterim } = {}) {
       done = true;
       clearTimeout(cap); clearTimeout(watchdog); clearTimeout(deaf);
       if (active === me) active = null;
-      if (!ended) try { rec.abort(); } catch { /* already stopped */ }
+      micOff();
+      if (!ended) try { rec?.abort(); } catch { /* already stopped */ }
       if (err) reject(err); else resolve(value);
     };
     const stop = () => {
-      try { rec.stop(); } catch { /* already stopped */ }
+      try { rec?.stop(); } catch { /* already stopped */ }
       trace.push('stop');
       watchdog = setTimeout(() => { trace.push('no-reply'); finish(results()); }, 1500);
     };
@@ -299,7 +326,7 @@ export function listen({ onInterim } = {}) {
     };
     trace = [];
     cap = setTimeout(stop, 15000);
-    open(true);
+    micOn().then(() => { if (!done) open(true); });
   });
 }
 
@@ -408,7 +435,11 @@ export const suggestGrade = (score) => (score >= 0.95 ? 3 : score >= 0.75 ? 2 : 
 export const canRecord = () => !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 
 export async function startRecording() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  await micOn();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (err) { micOff(); throw err; }
   const mr = new MediaRecorder(stream);
   const chunks = [];
   mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
@@ -421,6 +452,7 @@ export async function startRecording() {
         if (done) return;
         done = true;
         stream.getTracks().forEach((t) => t.stop());
+        micOff();
         resolve(new Blob(chunks, { type: mr.mimeType || 'audio/webm' }));
       };
       mr.onstop = () => setTimeout(end); // the last chunk arrives just before "stop"
