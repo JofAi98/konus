@@ -36,20 +36,68 @@ async function keepOffline(voice) {
 function playFile(voice, text, slow, fast = false) {
   const h = audioHash(text);
   if (!recorded.get(voice)?.has(h)) return null;
+  const url = `audio/${voice}/${h}.mp3`;
+  const speed = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : fast ? 1.2 : 1) * (rate / 0.9)));
+  // Web Audio changes pitch with speed, so only normal speed can go that way.
+  return speed === 1 && audioCtx() ? playDecoded(url) : playElement(url, speed);
+}
+
+function playElement(url, speed) {
   return new Promise((resolve) => {
     stopSpeaking();
-    const a = new Audio(`audio/${voice}/${h}.mp3`);
-    player = a;
-    // pause() fires no "ended", so stopSpeaking() settles the promise through this.
-    a._done = resolve;
+    const a = new Audio(url);
+    const me = {
+      stop() {
+        a.onerror = null;
+        a.pause();
+        a.removeAttribute('src'); a.load(); // let go of the audio hardware before the mic needs it
+        resolve();
+      },
+    };
+    player = me;
     a.preservesPitch = true;
-    a.playbackRate = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : fast ? 1.2 : 1) * (rate / 0.9)));
-    a.onended = () => { if (player === a) stopPlayer(); else resolve(); };
+    a.playbackRate = speed;
+    a.onended = () => { if (player === me) stopPlayer(); else resolve(); };
     a.onerror = () => resolve();
     a.play().catch((err) => {
       if (err?.name === 'NotAllowedError') window.dispatchEvent(new CustomEvent('speech-error', { detail: 'not-allowed' }));
       resolve();
     });
+  });
+}
+
+// iPhone: after an <audio> element plays, the next speech check can stay deaf.
+// Playing through Web Audio leaves the microphone alone.
+let ctx = null;
+function audioCtx() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!ctx && AC) ctx = new AC();
+  return ctx;
+}
+
+function playDecoded(url) {
+  return new Promise((resolve) => {
+    stopSpeaking();
+    let src = null;
+    const me = { stop() { try { src?.stop(); } catch { /* already over */ } resolve(); } };
+    player = me;
+    const running = ctx.state === 'running' ? null : Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 400))]);
+    (async () => {
+      try {
+        await running;
+        const data = await (await fetch(url)).arrayBuffer();
+        const buf = await ctx.decodeAudioData(data);
+        if (player !== me) return;
+        if (ctx.state !== 'running') throw new Error(ctx.state);
+        src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.onended = () => { if (player === me) player = null; resolve(); };
+        src.start();
+      } catch {
+        if (player === me) { player = null; playElement(url, 1).then(resolve); } else resolve();
+      }
+    })();
   });
 }
 
@@ -62,11 +110,8 @@ export async function playVoice(voice, text, { slow = false } = {}) {
 
 function stopPlayer() {
   if (!player) return;
-  const a = player; player = null;
-  a.onerror = null;
-  a.pause();
-  a.removeAttribute('src'); a.load(); // let go of the audio hardware before the mic needs it
-  a._done?.();
+  const p = player; player = null;
+  p.stop();
 }
 
 export function stopSpeaking() {
@@ -110,7 +155,8 @@ export function unlockAudio() {
   if (unlocked) return;
   unlocked = true;
   try { if (navigator.audioSession) navigator.audioSession.type = SR ? 'play-and-record' : 'playback'; } catch { /* older Safari */ }
-  try {
+  try { audioCtx()?.resume(); } catch { /* no Web Audio */ }
+  if (!navigator.audioSession) try {
     const n = 800;
     const buf = new ArrayBuffer(44 + n);
     const v = new DataView(buf);
@@ -176,10 +222,10 @@ export const canListen = () => !!SR;
 
 let active = null; // { finish, stop } for the check in progress
 let micReady = false; // the mic has started at least once, so permission is settled
-let lastEnd = '';
+let trace = [];
 
-// Why the last check ended; shown when nothing came through.
-export const listenEnd = () => lastEnd;
+// What the browser reported during the last check; shown when nothing came through.
+export const listenTrace = () => trace.join(' ');
 
 export function listen({ onInterim } = {}) {
   if (!SR) return Promise.reject(new Error('unsupported'));
@@ -205,8 +251,8 @@ export function listen({ onInterim } = {}) {
     };
     const stop = () => {
       try { rec.stop(); } catch { /* already stopped */ }
-      lastEnd = 'stopped';
-      watchdog = setTimeout(() => { lastEnd = 'no reply'; finish(results()); }, 1500);
+      trace.push('stop');
+      watchdog = setTimeout(() => { trace.push('no-reply'); finish(results()); }, 1500);
     };
     const me = { finish, stop };
     active = me;
@@ -220,10 +266,12 @@ export function listen({ onInterim } = {}) {
       r.interimResults = true;
       r.maxAlternatives = 5;
       r.continuous = false;
-      r.onaudiostart = () => { micReady = true; clearTimeout(deaf); };
+      for (const ev of ['start', 'soundstart', 'speechstart', 'speechend']) r.addEventListener?.(ev, () => { if (r === rec) trace.push(ev); });
+      r.onaudiostart = () => { trace.push('audio'); micReady = true; clearTimeout(deaf); };
       r.onresult = (e) => {
         if (r !== rec) return;
         const res = e.results[e.results.length - 1];
+        trace.push(res.isFinal ? 'final' : 'interim');
         if (res.isFinal) {
           finals = [];
           for (let i = 0; i < res.length; i++) finals.push({ text: res[i].transcript, conf: res[i].confidence });
@@ -234,21 +282,22 @@ export function listen({ onInterim } = {}) {
       };
       r.onerror = (e) => {
         if (r !== rec) return;
-        lastEnd = e.error;
+        trace.push(e.error);
         if (e.error === 'no-speech' || e.error === 'aborted') finish(results(), null, true);
         else finish(null, new Error(e.error), true);
       };
-      r.onend = () => { if (r === rec) finish(results(), null, true); };
+      r.onend = () => { if (r === rec) { trace.push('end'); finish(results(), null, true); } };
       if (micReady) {
         deaf = setTimeout(() => {
           try { r.abort(); } catch { /* already stopped */ }
+          trace.push('silent');
           if (retry) open(false);
-          else { lastEnd = 'mic silent'; finish([]); }
+          else finish([]);
         }, 2500);
       }
       try { r.start(); } catch (err) { finish(null, err, true); }
     };
-    lastEnd = 'ended';
+    trace = [];
     cap = setTimeout(stop, 15000);
     open(true);
   });

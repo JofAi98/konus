@@ -379,7 +379,7 @@ const MIC_ERRORS = {
   unsupported: 'This browser cannot check speech. Chrome, Edge and Safari can. You can still say it out loud and compare by ear.',
 };
 
-const nothingHeard = () => `Nothing came through. Tap and speak a little louder. <small class="muted">(${esc(S.listenEnd())})</small>`;
+const nothingHeard = () => `Nothing came through. Tap and speak a little louder. <small class="muted">(${esc(S.listenTrace())})</small>`;
 const micError = (err) => esc(MIC_ERRORS[err.message] || 'Speech checking stopped: ' + err.message);
 
 // Listen on behalf of a button. Null means this check was replaced or the page changed.
