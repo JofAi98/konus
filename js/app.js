@@ -1,15 +1,9 @@
-import { UNITS, LESSONS, lessonById, COURSE_WORDS } from './course.js';
-import * as P from './pron.js';
+import { L, P, useLang, LESSONS, lessonById, COURSE_WORDS, DRILLS, drillById, DIALOGUES, dialogueById, WHO, STORIES, storyById, THEMES, NEED, themeById, wordKey, VOICES, SAMPLES, NEXT_RANK } from './lang.js';
 import * as S from './speech.js';
 import * as srs from './srs.js';
 import { store, cardId, saveRecording, getRecording, dayKey, WEEK_GOAL, DAY_XP } from './store.js';
 import * as sync from './sync.js';
-import { VOICES, SAMPLES } from './voices.js';
-import { PATH, KIND, XP, DAILY_GOAL, NEXT_RANK, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, XP_PER_LEVEL, levelInfo, xpToReach, rankOf, rankIndex, isOpen, featureOpen, unlocksAt } from './levels.js';
-import { DRILLS, drillById } from './drills.js';
-import { DIALOGUES, dialogueById, WHO } from './dialogues.js';
-import { STORIES, storyById } from './stories.js';
-import { THEMES, NEED, themeById, wordKey } from './themes.js';
+import { PATH, KIND, XP, DAILY_GOAL, FEATURES, TUTORIAL, HUNTER, LADDER, hunterRank, XP_PER_LEVEL, levelInfo, xpToReach, rankOf, rankIndex, isOpen, featureOpen, unlocksAt, refreshPath } from './levels.js';
 
 /* ---------- helpers ---------- */
 
@@ -23,7 +17,7 @@ const upper = (s) => s.replace(/ə/g, 'Ə').toUpperCase();
 const shuffle = (a) => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const kindOf = (tr) => (P.tokens(tr).length > 1 ? 'phrase' : 'word');
-const recKey = (tr) => cardId(kindOf(tr), fill(tr));
+const recKey = (tr) => L.recPrefix + cardId(kindOf(tr), fill(tr));
 
 const svg = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const I = {
@@ -51,7 +45,7 @@ const I = {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Meaning of any word the app knows, from the course and your vocab.
-const EXTRA_WORDS = [
+const extraWords = () => [
   ...DRILLS.flatMap((d) => d.items.flatMap((it) => it.words)),
   ...DIALOGUES.flatMap((d) => d.lines.flatMap((l) => l.words)),
   ...STORIES.flatMap((st) => st.lines.flatMap((l) => l.words)),
@@ -59,7 +53,7 @@ const EXTRA_WORDS = [
 function glossMap() {
   const m = new Map();
   for (const w of COURSE_WORDS) m.set(P.clean(w.tr), w.en);
-  for (const w of EXTRA_WORDS) if (!m.has(P.clean(w.tr))) m.set(P.clean(w.tr), w.en);
+  for (const w of extraWords()) if (!m.has(P.clean(w.tr))) m.set(P.clean(w.tr), w.en);
   for (const c of store.cards()) if (c.kind === 'word' && !m.has(P.clean(c.tr))) m.set(P.clean(c.tr), c.en);
   return m;
 }
@@ -75,7 +69,7 @@ function sayHTML(text) {
 
 function phraseHTML(tr, { size = 'xl', spelling = settings().showSpelling } = {}) {
   return `<div class="phrase ${size}${spelling ? '' : ' nospell'}">
-    ${spelling ? `<p class="tr" lang="tr">${esc(fill(tr))}</p>` : ''}
+    ${spelling ? `<p class="tr" lang="${L.tag}">${esc(fill(tr))}</p>` : ''}
     <p class="say" aria-label="How to say it">${sayHTML(tr)}</p>
   </div>`;
 }
@@ -103,7 +97,7 @@ const speakHTML = (tr) => `<div class="speak" data-target="${esc(tr)}" data-key=
 function breakdownHTML(it) {
   const words = (it.words || []).filter((w) => P.clean(w.tr) !== P.clean(it.tr));
   if (!words.length) return '';
-  return `<ul class="breakdown">${words.map((w) => `<li><a href="#word/${encodeURIComponent(w.tr)}" lang="tr">${esc(w.tr)}</a><span>${esc(w.en)}</span></li>`).join('')}</ul>`;
+  return `<ul class="breakdown">${words.map((w) => `<li><a href="#word/${encodeURIComponent(w.tr)}" lang="${L.tag}">${esc(w.tr)}</a><span>${esc(w.en)}</span></li>`).join('')}</ul>`;
 }
 
 const strengthPct = (c) => Math.round(srs.retrievability(c) * 100);
@@ -219,7 +213,7 @@ function weekDone() {
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-labelledby', 'wd-title');
   el.innerHTML = `<div class="lu-card">
-    <p class="eyebrow">Week done · <span lang="tr">Aferin!</span></p>
+    <p class="eyebrow">Week done · <span lang="${L.tag}">${esc(L.praise)}</span></p>
     <h2 id="wd-title" class="lu-num wd-num">${weeksText(n)}</h2>
     <p class="muted">${n === 1 ? `Three practice days this week. Do the same next week and the streak grows.` : `${n} weeks in a row with at least ${WEEK_GOAL} practice days.`} Anything more this week is extra.</p>
     <button class="btn primary">Continue</button>
@@ -268,7 +262,7 @@ function levelUp(from, to) {
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-labelledby', 'lu-title');
   el.innerHTML = `<div class="lu-card">
-    <p class="eyebrow">Level up · <span lang="tr">Tebrikler!</span></p>
+    <p class="eyebrow">Level up · <span lang="${L.tag}">${esc(L.congrats)}</span></p>
     <h2 id="lu-title" class="lu-num">Level ${to}</h2>
     ${opened.length ? `<p class="muted small">Now open:</p><ul class="lu-list">${opened.map((o) => `<li><b>${esc(o.title)}</b><span>${esc(o.sub)}</span></li>`).join('')}</ul>`
     : `<p class="muted">${nx ? `Level ${nx.level} opens ${esc(nx.items.map((i) => i.title).join(', '))}.` : `Keep going: the ${esc(me().rank.id)} exam opens at level ${me().rank.examAt}.`}</p>`}
@@ -371,10 +365,10 @@ async function stopRecording({ keep = true } = {}) {
 }
 
 const MIC_ERRORS = {
+  get 'language-not-supported'() { return `This browser cannot recognise ${L.name}. Try Chrome or Safari.`; },
   'not-allowed': 'Microphone access is blocked. Allow it for this site in the browser (the icon next to the address), then try again.',
   'service-not-allowed': 'Speech checking is turned off on this device. On a Mac or iPhone, turn on Dictation in Settings, then try again.',
   network: 'Speech checking needs an internet connection in this browser.',
-  'language-not-supported': 'This browser cannot recognise Turkish. Try Chrome or Safari.',
   'audio-capture': 'No microphone was found.',
   unsupported: 'This browser cannot check speech. Chrome, Edge and Safari can. You can still say it out loud and compare by ear.',
 };
@@ -399,7 +393,7 @@ async function micListen(el, onInterim) {
 
 function resultHTML(res) {
   const pct = Math.round(res.score * 100);
-  const verdict = pct >= 95 ? 'Clear. A Turkish ear understood every word.' : pct >= 75 ? 'Close. Most of it came through.' : 'Not yet. Listen again, then say it slowly.';
+  const verdict = pct >= 95 ? `Clear. A ${L.name} ear understood every word.` : pct >= 75 ? 'Close. Most of it came through.' : 'Not yet. Listen again, then say it slowly.';
   const tone = pct >= 95 ? 'ok' : pct >= 75 ? 'close' : 'miss';
   const hints = [];
   const seen = new Set();
@@ -408,9 +402,9 @@ function resultHTML(res) {
     if (!seen.has(k) && h.tip) { seen.add(k); hints.push({ ...h, word: w.word }); }
   }
   return `<div class="verdict ${tone}"><span class="pct">${pct}%</span><span>${verdict}</span></div>
-    <p class="chips">${res.words.map((w) => `<span class="chip ${w.status}" lang="tr">${esc(w.word)}</span>`).join(' ')}</p>
-    ${res.heardText ? `<p class="heard">Heard: <span lang="tr">“${esc(res.heardText)}”</span></p>` : ''}
-    ${hints.length ? `<ul class="hints">${hints.map((h) => `<li><b lang="tr">${esc(h.expect)}</b> in <span lang="tr">${esc(h.word)}</span> came out as <b lang="tr">${esc(h.got || 'nothing')}</b>. ${esc(h.tip)}</li>`).join('')}</ul>` : ''}`;
+    <p class="chips">${res.words.map((w) => `<span class="chip ${w.status}" lang="${L.tag}">${esc(w.word)}</span>`).join(' ')}</p>
+    ${res.heardText ? `<p class="heard">Heard: <span lang="${L.tag}">“${esc(res.heardText)}”</span></p>` : ''}
+    ${hints.length ? `<ul class="hints">${hints.map((h) => `<li><b lang="${L.tag}">${esc(h.expect)}</b> in <span lang="${L.tag}">${esc(h.word)}</span> came out as <b lang="${L.tag}">${esc(h.got || 'nothing')}</b>. ${esc(h.tip)}</li>`).join('')}</ul>` : ''}`;
 }
 
 const globalActions = {
@@ -498,7 +492,7 @@ function todayView() {
   const s = settings();
   const m = me();
   const h = new Date().getHours();
-  const greet = h < 11 ? 'Günaydın' : h < 18 ? 'Merhaba' : 'İyi akşamlar';
+  const greet = L.greet(h);
   const cards = store.cards();
   const due = cards.filter((c) => srs.isDue(c)).length;
   const next = nextUp(m);
@@ -513,7 +507,7 @@ function todayView() {
   view.innerHTML = `
   <section class="hello">
     <p class="eyebrow">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-    <h1 class="display" lang="tr">${greet}, ${esc(s.name)}.</h1>
+    <h1 class="display" lang="${L.tag}">${greet}, ${esc(s.name)}.</h1>
     <p class="say muted-say">${sayHTML(greet)}</p>
   </section>
 
@@ -537,7 +531,7 @@ function todayView() {
     </article>
     ${theme ? `<article class="panel">
       <p class="eyebrow">Theme · ${learnedIn(theme)} of ${theme.words.length} learned</p>
-      <h2 class="lesson-title">${esc(theme.title)}</h2><p class="muted" lang="tr">${esc(theme.tr)}</p>
+      <h2 class="lesson-title">${esc(theme.title)}</h2><p class="muted" lang="${L.tag}">${esc(theme.tr)}</p>
       <a class="btn" href="#theme/${theme.id}">${I.themes}<span>Practise words</span></a>
     </article>` : ''}
   </div>
@@ -613,7 +607,7 @@ function pathView() {
 
   <div class="filters" role="tablist">${[['all', 'All'], ['lesson', 'Lessons'], ['drill', 'Build'], ['dialogue', 'Talk'], ['story', 'Stories']].map(([k, t]) => `<button class="filter${pathUI.kind === k ? ' on' : ''}" data-act="pfilter" data-k="${k}" role="tab" aria-selected="${pathUI.kind === k}">${t}</button>`).join('')}</div>
 
-  <h2 class="rank-title"><span class="rank-badge small">A1</span>Beginner <span lang="tr" class="muted">Başlangıç</span><span class="ranks-note">Ranks F, E, E+</span></h2>
+  <h2 class="rank-title"><span class="rank-badge small">A1</span>Beginner <span lang="${L.tag}" class="muted">${esc(L.rankNames.A1)}</span><span class="ranks-note">Ranks F, E, E+</span></h2>
   ${levels.map((L) => {
     const items = groups.get(L);
     const fs = feats.filter((f) => f.level === L);
@@ -624,7 +618,7 @@ function pathView() {
     </section>`;
   }).join('')}
 
-  <h2 class="rank-title${passedA1 ? '' : ' locked'}"><span class="rank-badge small">A2</span>Elementary <span lang="tr" class="muted">Temel</span><span class="ranks-note">Ranks D, D+</span></h2>
+  <h2 class="rank-title${passedA1 ? '' : ' locked'}"><span class="rank-badge small">A2</span>Elementary <span lang="${L.tag}" class="muted">${esc(L.rankNames.A2)}</span><span class="ranks-note">Ranks D, D+</span></h2>
   <p class="muted small">${passedA1 ? 'Open. These arrive in app updates as they are written.' : 'Pass the A1 exam to open all of this at once.'}</p>
   <ol class="lessons">${NEXT_RANK.A2.filter((p) => pathUI.kind === 'all' || p.kind === pathUI.kind).map((p) => `<li><div class="lrow locked"${passedA1 ? '' : ' data-act="locked" data-rank="A2" role="button" tabindex="0"'}>
     <span class="lstate">${passedA1 ? '' : I.lock}</span><span class="ltext"><b>${esc(p.title)}</b><small>${esc(p.sub)}</small></span><span class="tag k-${p.kind}">${passedA1 ? 'Soon' : KIND[p.kind]}</span>
@@ -718,21 +712,21 @@ function drawStep() {
     body = `<p class="eyebrow">Build · ${esc(d.goal)}</p>
       <h1 class="prompt">${esc(d.title)}</h1>
       ${d.intro.map((t) => `<p class="lede">${esc(t)}</p>`).join('')}
-      <table class="pattern"><tbody>${d.table.map(([tr, en]) => `<tr><td><button class="linkbtn" data-act="play" data-text="${esc(tr)}" lang="tr">${esc(tr)}</button></td><td>${esc(en)}</td></tr>`).join('')}</tbody></table>
-      <p class="muted small">Next: ${d.items.length} sentences. Read the English, say it in Turkish out loud, then check. Each one changes a single piece from the one before.</p>
+      <table class="pattern"><tbody>${d.table.map(([tr, en]) => `<tr><td><button class="linkbtn" data-act="play" data-text="${esc(tr)}" lang="${L.tag}">${esc(tr)}</button></td><td>${esc(en)}</td></tr>`).join('')}</tbody></table>
+      <p class="muted small">Next: ${d.items.length} sentences. Read the English, say it in ${L.name} out loud, then check. Each one changes a single piece from the one before.</p>
       <div class="next"><button class="btn primary" data-act="next">Start building ${I.arrow}</button></div>`;
   } else if (step.type === 'build') {
     const prev = s.steps[s.i - 1]?.type === 'build' ? s.steps[s.i - 1].it : null;
     body = `<p class="eyebrow">Build · ${step.n ? `${step.n} of ${s.drill.items.length}` : 'one more time'}</p>
-      ${prev ? `<p class="last">Before: <span lang="tr">${esc(fill(prev.tr))}</span></p>` : ''}
+      ${prev ? `<p class="last">Before: <span lang="${L.tag}">${esc(fill(prev.tr))}</span></p>` : ''}
       <h2 class="prompt">${esc(fill(it.en))}</h2>
-      ${it.words.length ? `<p class="hint">${it.words.map((w) => `<span lang="tr">${esc(w.tr)}</span> ${esc(w.en)}`).join(' · ')}</p>` : ''}
+      ${it.words.length ? `<p class="hint">${it.words.map((w) => `<span lang="${L.tag}">${esc(w.tr)}</span> ${esc(w.en)}`).join(' · ')}</p>` : ''}
       ${speakHTML(it.tr)}
       <div class="answer" hidden>${phraseHTML(it.tr, { size: 'lg' })}${audioHTML(it.tr)}${it.note ? `<p class="note">${esc(it.note)}</p>` : ''}</div>
       <div class="next"><button class="btn" data-act="reveal">Show answer</button></div>`;
   } else {
     const card = cardFor(it);
-    body = `<p class="eyebrow">${s.back ? 'Practice' : s.kind === 'review' ? 'Review' : 'From memory'} · say it in Turkish</p>
+    body = `<p class="eyebrow">${s.back ? 'Practice' : s.kind === 'review' ? 'Review' : 'From memory'} · say it in ${L.name}</p>
       <h2 class="prompt">${esc(fill(it.en))}</h2>
       ${speakHTML(it.tr)}
       <div class="answer" hidden>${phraseHTML(it.tr, { size: 'lg' })}${audioHTML(it.tr)}</div>
@@ -828,7 +822,7 @@ function finish() {
   s.finished = true;
   local = {};
   if (s.kind === 'review') {
-    view.innerHTML = `<section class="done"><p class="eyebrow">${s.back ? 'Practice' : 'Review'} done</p><h1 lang="tr">Aferin!</h1><p class="say muted-say">${sayHTML('Aferin')}</p>
+    view.innerHTML = `<section class="done"><p class="eyebrow">${s.back ? 'Practice' : 'Review'} done</p><h1 lang="${L.tag}">${esc(L.praise)}</h1><p class="say muted-say">${sayHTML(L.praiseWord)}</p>
       <p class="lede">Well done. You practised ${plural(s.count, 'card', 'cards')}. Each one comes back right before you would forget it.</p>
       <div class="row">${s.back ? `<a class="btn primary" href="${s.back}">Back to Vocab</a>` : '<a class="btn primary" href="#today">Back to Today</a>'}</div></section>`;
     return;
@@ -840,7 +834,7 @@ function finish() {
     store.markLesson(d.id);
     store.log('lessons');
     award(first ? XP.drill : XP.again);
-    view.innerHTML = `<section class="done"><p class="eyebrow">Build done</p><h1 lang="tr">Aferin!</h1><p class="say muted-say">${sayHTML('Aferin')}</p>
+    view.innerHTML = `<section class="done"><p class="eyebrow">Build done</p><h1 lang="${L.tag}">${esc(L.praise)}</h1><p class="say muted-say">${sayHTML(L.praiseWord)}</p>
       <p class="lede">You built ${plural(s.ok, 'sentence', 'sentences')} out of ${d.items.length} on the first try.${words ? ` Saved ${plural(words, 'new word', 'new words')} to your vocab.` : ''} Do it again any time: speed comes from repetition.</p>
       <div class="row">${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div></section>`;
     return;
@@ -867,7 +861,7 @@ function finish() {
   store.markLesson(l.id);
   store.log('lessons');
   award(first ? XP.lesson : XP.again);
-  view.innerHTML = `<section class="done"><p class="eyebrow">Lesson done</p><h1 lang="tr">Aferin!</h1><p class="say muted-say">${sayHTML('Aferin')}</p>
+  view.innerHTML = `<section class="done"><p class="eyebrow">Lesson done</p><h1 lang="${L.tag}">${esc(L.praise)}</h1><p class="say muted-say">${sayHTML(L.praiseWord)}</p>
     <p class="lede">Well done. ${phrases || words ? `Saved ${plural(phrases, 'phrase', 'phrases')} and ${plural(words, 'word', 'words')} to your vocab.` : 'Everything here was already in your vocab.'} They come back for review in a few days.</p>
     <div class="row">${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div></section>`;
 }
@@ -887,7 +881,7 @@ function bubbleHTML(line, i, { showEn = listenUI.english } = {}) {
   return `<li class="bubble${line.who === 'you' ? ' mine' : ''}" data-i="${i}">
     <span class="who">${esc(WHO[line.who])}</span>
     <button class="btext" data-act="playline" data-i="${i}">
-      <span class="btr" lang="tr">${esc(fill(line.tr))}</span>
+      <span class="btr" lang="${L.tag}">${esc(fill(line.tr))}</span>
       <span class="ben"${showEn ? '' : ' hidden'}>${esc(fill(line.en))}</span>
     </button>
   </li>`;
@@ -1063,7 +1057,7 @@ function talkDone() {
   store.log('lessons');
   award(first ? XP.dialogue : XP.again);
   $('#turn').innerHTML = `<section class="done">
-    <p class="eyebrow">Scene done</p><h1 lang="tr">Aferin!</h1>
+    <p class="eyebrow">Scene done</p><h1 lang="${L.tag}">${esc(L.praise)}</h1>
     <p class="lede">${S.canListen() ? `${clear} of ${mine.length} of your lines came through clearly. ` : ''}${saved ? `Saved ${plural(saved, 'line', 'lines')} you said to your vocab, so they come back in review.` : 'Your lines are already in your vocab.'}</p>
     <div class="row"><button class="btn" data-act="talkmode" data-m="${talk.mode}">Play it again</button>${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div>
   </section>`;
@@ -1084,20 +1078,7 @@ function metWords() {
   return known;
 }
 
-// Turkish stacks endings on a root, so a word counts as known when you know its root:
-// "telefon" covers "telefonumu", "gel" covers "gelelim".
-function knowsWord(known, w) {
-  if (known.has(w)) return true;
-  for (const k of known) {
-    if (k.length >= 3 && w.startsWith(k)) return true;
-    const m = Math.min(k.length, w.length);
-    if (m < 4) continue;
-    let i = 0;
-    while (i < m && k[i] === w[i]) i++;
-    if (i >= Math.min(5, m)) return true;
-  }
-  return false;
-}
+const knowsWord = (known, w) => L.knowsWord(known, w);
 
 function storyWords(st, known = metWords()) {
   const name = P.clean(settings().name);
@@ -1131,10 +1112,10 @@ function storyView(id) {
   const { pct, fresh } = storyWords(st);
   view.innerHTML = `
   <div class="sbar"><a class="iconlink" href="#path" aria-label="Close">${I.x}</a><span class="eyebrow">Story${isDone(st.id) ? ' · done' : ''}</span></div>
-  <header class="page-head"><h1 lang="tr">${esc(st.title)}</h1><p class="lede">${esc(st.en)}</p>
+  <header class="page-head"><h1 lang="${L.tag}">${esc(st.title)}</h1><p class="lede">${esc(st.en)}</p>
     <p class="muted small">You know ${pct}% of the words in this story${fresh.length ? '. The rest are below' : ''}.</p></header>
   ${fresh.length ? `<section class="block"><h3>New in this story</h3>
-    <div class="newwords">${fresh.map((w) => `<button class="newword" data-act="play" data-text="${esc(w.tr)}"><b lang="tr">${esc(w.tr)}</b><span>${esc(w.en)}</span></button>`).join('')}</div>
+    <div class="newwords">${fresh.map((w) => `<button class="newword" data-act="play" data-text="${esc(w.tr)}"><b lang="${L.tag}">${esc(w.tr)}</b><span>${esc(w.en)}</span></button>`).join('')}</div>
   </section>` : ''}
   <p class="note">${fresh.length ? 'Tap each new word to hear it. Then listen' : 'Listen'} without the text and follow what you can, and answer the questions. Show the text, or tap a word, only when you need to.</p>
   <div class="row">
@@ -1144,7 +1125,7 @@ function storyView(id) {
   ${fastSwitchHTML()}
   <ol class="story${listenUI.text ? '' : ' notext'}">${st.lines.map((l, i) => `<li class="sline" data-i="${i}">
     <button class="play-mini" data-act="storyline" data-i="${i}" aria-label="Play line ${i + 1}">${I.play}</button>
-    <div class="sbody"><p class="str" lang="tr">${tapWordsHTML(l.tr)}</p><p class="sen" hidden>${esc(fill(l.en))}</p></div>
+    <div class="sbody"><p class="str" lang="${L.tag}">${tapWordsHTML(l.tr)}</p><p class="sen" hidden>${esc(fill(l.en))}</p></div>
     <button class="en-btn" data-act="storyen" data-i="${i}" aria-label="Show the English">EN</button>
   </li>`).join('')}</ol>
   <section class="block"><h3>Questions</h3>
@@ -1204,7 +1185,7 @@ function storyView(id) {
       store.log('lessons');
       award((first ? XP.story : XP.again) + right * XP.answer);
       $('#story-end').innerHTML = `<section class="done">
-        <p class="eyebrow">Story done</p><h1 lang="tr">${right === st.questions.length ? 'Harika!' : 'Aferin!'}</h1>
+        <p class="eyebrow">Story done</p><h1 lang="${L.tag}">${esc(right === st.questions.length ? L.great : L.praise)}</h1>
         <p class="lede">${right} of ${st.questions.length} right. ${right < st.questions.length ? 'Show the text and listen once more: the answers are all in there.' : 'You followed the whole story by ear.'}</p>
         <div class="row">${nextButtonHTML()}<a class="btn" href="#path">Back to path</a></div>
       </section>`;
@@ -1231,7 +1212,7 @@ function examView(kind) {
     <p class="lede">${mock ? 'The same format as the real exam. Take it as often as you like.' : passed ? `You passed on ${new Date(store.state.progress['rank:A2'].at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}. Take it again any time for practice.` : 'Pass it to become A2. Everything in A2 opens at once: grammar, vocabulary, dialogues and stories.'}</p></header>
   <ol class="exam-parts">
     <li><b>Listening</b><span>6 questions. Hear a sentence, choose what it means.</span></li>
-    <li><b>Speaking</b><span>8 questions. Read the English, say it in Turkish.</span></li>
+    <li><b>Speaking</b><span>8 questions. Read the English, say it in ${L.name}.</span></li>
     <li><b>Conversation</b><span>6 questions. Hear a line, choose the right answer.</span></li>
   </ol>
   <p class="muted small">Pass mark: ${Math.round(20 * PASS)} of 20. ${mock ? '' : 'If you don\'t pass, you can try again tomorrow.'}${S.canListen() ? '' : ' This browser can\'t check speech, so in the speaking part you mark yourself.'}</p>
@@ -1278,7 +1259,7 @@ function drawExamQ() {
       <p class="muted">${esc(WHO[q.cue.who])} says:</p>
       <h2 class="prompt">What do you answer?</h2>
       <div class="audio big"><button class="btn primary" data-act="play" data-text="${esc(q.cue.tr)}">${I.play}<span>Listen again</span></button></div>
-      <div class="opts col">${q.options.map((o, oi) => `<button class="opt" data-act="exans" data-o="${oi}" lang="tr">${esc(fill(o))}</button>`).join('')}</div>`;
+      <div class="opts col">${q.options.map((o, oi) => `<button class="opt" data-act="exans" data-o="${oi}" lang="${L.tag}">${esc(fill(o))}</button>`).join('')}</div>`;
   }
   view.innerHTML = `<div class="session">
     <div class="sbar">
@@ -1341,7 +1322,7 @@ function examResult() {
   view.innerHTML = `<section class="done">
     <p class="eyebrow">${e.mock ? 'Practice exam' : 'A1 exam'} · result</p>
     <h1 class="big-num">${e.right} / ${n}</h1>
-    <h2 class="lesson-title" lang="tr">${pass ? 'Tebrikler!' : 'Olsun, devam!'}</h2>
+    <h2 class="lesson-title" lang="${L.tag}">${esc(pass ? L.congrats : L.chinUp)}</h2>
     <p class="lede">${pass
     ? (e.mock ? 'That would pass the real exam.' : wasA1 ? 'You\'re A2 now. Everything in A2 is open, and the path shows what\'s coming.' : 'Passed again.')
     : `You need ${Math.round(n * PASS)} to pass. ${e.mock ? 'Review, replay a few dialogues, and try again.' : 'Try again tomorrow. Until then, the practice exam and your reviews are the best preparation.'}`}</p>
@@ -1364,11 +1345,11 @@ function themesView() {
   const m = me();
   const cur = currentTheme(m);
   view.innerHTML = `
-  <header class="page-head"><h1>Themes</h1><p class="lede">Ten words at a time. Tap the English to hear the Turkish, then take the mini test: say each word out loud. Get it right and it goes to your vocab. Finish a theme to open the next.</p></header>
+  <header class="page-head"><h1>Themes</h1><p class="lede">Ten words at a time. Tap the English to hear the ${L.name}, then take the mini test: say each word out loud. Get it right and it goes to your vocab. Finish a theme to open the next.</p></header>
   ${cur ? `<a class="panel theme-now" href="#theme/${cur.id}">
     <p class="eyebrow">Now · ${learnedIn(cur)} of ${cur.words.length} learned</p>
     <h2 class="lesson-title">${esc(cur.title)}</h2>
-    <p class="muted" lang="tr">${esc(cur.tr)}</p>
+    <p class="muted" lang="${L.tag}">${esc(cur.tr)}</p>
     <div class="meter"><span style="width:${(learnedIn(cur) / cur.words.length) * 100}%"></span></div>
     <span class="btn primary">${I.arrow}<span>Practise</span></span>
   </a>` : `<p class="note">Every ${esc(m.rank.id)} theme is done. New themes arrive with the next rank.</p>`}
@@ -1379,11 +1360,11 @@ function themesView() {
     const prev = THEMES[i - 1];
     return `<li><a class="lrow${done ? ' done' : ''}${cur?.id === t.id ? ' is-next' : ''}${open ? '' : ' locked'}" href="${open ? '#theme/' + t.id : '#themes'}"${open ? '' : ` data-act="tlocked" data-prev="${esc(prev?.title || '')}"`}>
       <span class="lstate">${done ? I.check : open ? '' : I.lock}</span>
-      <span class="ltext"><b>${esc(t.title)}</b><small lang="tr">${esc(t.tr)}${open && !done ? ` · ${n} of ${t.words.length} learned` : ''}</small></span>
+      <span class="ltext"><b>${esc(t.title)}</b><small lang="${L.tag}">${esc(t.tr)}${open && !done ? ` · ${n} of ${t.words.length} learned` : ''}</small></span>
       <span class="tag">${t.rank}</span>
     </a></li>`;
   }).join('')}</ol>
-  <p class="muted small">A2 themes (travel, health, the home in detail, opinions) open with rank D.</p>`;
+  ${L.a2ThemesNote ? `<p class="muted small">${esc(L.a2ThemesNote)}</p>` : ''}`;
   local = { tlocked: (el) => toast(`Learn every word in ${el.dataset.prev} first. This theme opens right after.`) };
 }
 
@@ -1411,7 +1392,7 @@ function quizCardHTML(t, w) {
   if (wordN(t, w) >= NEED) return `<li class="wcard m-ok">
     <button class="wface" data-act="tplay" data-k="${esc(k)}">
       <span class="wmain">${esc(w.en)}</span>
-      <span class="wsub" lang="tr">${esc(w.tr)}</span>
+      <span class="wsub" lang="${L.tag}">${esc(w.tr)}</span>
     </button>
     <div class="wfoot"><span class="tag on">In vocab</span></div>
   </li>`;
@@ -1423,7 +1404,7 @@ function quizCardHTML(t, w) {
     </button>
     ${tr ? `<div class="wtry">
       <p class="small">${tr.msg}</p>
-      <button class="linkbtn" data-act="tsay" data-k="${esc(k)}" lang="tr">${I.play}${esc(w.tr)}</button>
+      <button class="linkbtn" data-act="tsay" data-k="${esc(k)}" lang="${L.tag}">${I.play}${esc(w.tr)}</button>
       <button class="btn small" data-act="tright" data-k="${esc(k)}">${I.check}<span>I said it right</span></button>
     </div>` : ''}
   </li>`;
@@ -1433,24 +1414,24 @@ function drawTheme(t) {
   const n = learnedIn(t);
   view.innerHTML = `
   <a class="backlink" href="#themes">${I.back}<span>Themes</span></a>
-  <header class="page-head"><p class="eyebrow">Theme · ${t.rank} · ${n} of ${t.words.length} learned</p><h1>${esc(t.title)}</h1><p class="lede" lang="tr">${esc(t.tr)}</p></header>
+  <header class="page-head"><p class="eyebrow">Theme · ${t.rank} · ${n} of ${t.words.length} learned</p><h1>${esc(t.title)}</h1><p class="lede" lang="${L.tag}">${esc(t.tr)}</p></header>
   <section class="block">
     <h2 class="h2">Listen</h2>
-    <p class="muted small">Tap a word to hear it in Turkish, and say it out loud after her.</p>
+    <p class="muted small">Tap a word to hear it in ${L.name}, and say it out loud after her.</p>
     <ul class="wgrid">${themeUI.order.map((w) => {
       const k = wordKey(t, w);
       const shown = themeUI.shown.has(k);
       return `<li class="wcard">
         <button class="wface" data-act="tplay" data-k="${esc(k)}">
           <span class="wmain">${esc(w.en)}</span>
-          <span class="wsub" lang="tr"${shown ? '' : ' hidden'}>${esc(w.tr)}</span>
+          <span class="wsub" lang="${L.tag}"${shown ? '' : ' hidden'}>${esc(w.tr)}</span>
         </button>
       </li>`;
     }).join('')}</ul>
   </section>
   <section class="block" id="tquiz">
     <h2 class="h2">Mini test</h2>
-    <p class="muted small">${n === t.words.length ? 'Theme complete.' : `Tap a box and say the word in Turkish. Get it right and it's learned, and goes to your vocab. ${plural(t.words.length - n, 'word', 'words')} to go.`}</p>
+    <p class="muted small">${n === t.words.length ? 'Theme complete.' : `Tap a box and say the word in ${L.name}. Get it right and it's learned, and goes to your vocab. ${plural(t.words.length - n, 'word', 'words')} to go.`}</p>
     <ul class="wgrid">${themeUI.quiz.map((w) => quizCardHTML(t, w)).join('')}</ul>
   </section>
   <div id="theme-end"></div>`;
@@ -1488,7 +1469,7 @@ function drawTheme(t) {
         const right = res.score >= 0.75;
         store.log('spoken');
         if (right) learned(w);
-        else themeUI.tries.set(k, { msg: `Heard: <span lang="tr">“${esc(res.heardText)}”</span>` });
+        else themeUI.tries.set(k, { msg: `Heard: <span lang="${L.tag}">“${esc(res.heardText)}”</span>` });
         award(XP.spoken + (right ? XP.word + XP.mastered : 0));
         drawTheme(t);
         S.speak(w.tr);
@@ -1508,7 +1489,7 @@ function themeComplete(t) {
 function themeEndHTML(t) {
   const next = currentTheme();
   return `<section class="done">
-    <p class="eyebrow">Theme complete</p><h2 class="lesson-title" lang="tr">Aferin!</h2>
+    <p class="eyebrow">Theme complete</p><h2 class="lesson-title" lang="${L.tag}">${esc(L.praise)}</h2>
     <p class="lede">All ten ${esc(t.title.toLowerCase())} words are in your vocab, and they'll come back in review.${next ? ` Next theme: ${esc(next.title)}.` : ''}</p>
     <div class="row">${next ? `<a class="btn primary" href="#theme/${next.id}">${I.arrow}<span>${esc(next.title)}</span></a>` : ''}<a class="btn" href="#themes">All themes</a></div>
   </section>`;
@@ -1532,9 +1513,8 @@ function topicOf(c) {
   if (src === 'mine') return 'Added by me';
   return 'Other';
 }
-const TOPIC_ORDER = [...THEMES.map((t) => t.title)];
 const topicSort = (a, b) => {
-  const ia = TOPIC_ORDER.indexOf(a), ib = TOPIC_ORDER.indexOf(b);
+  const ia = THEMES.findIndex((t) => t.title === a), ib = THEMES.findIndex((t) => t.title === b);
   return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
 };
 
@@ -1543,7 +1523,7 @@ function vocabView() {
   view.innerHTML = `
   <header class="page-head row-between"><div><h1>Vocab</h1><p class="lede">${plural(cards.filter((c) => c.kind === 'phrase').length, 'phrase', 'phrases')} and ${plural(cards.filter((c) => c.kind === 'word').length, 'word', 'words')}, saved as you learn.</p></div>
     <span class="row"><a class="btn primary" href="#practise">${I.mic}<span>Practise</span></a><a class="btn" href="#add">${I.plus}<span>Add</span></a></span></header>
-  <div class="searchbar">${I.search}<input id="vq" type="search" placeholder="Search Turkish or English" value="${esc(vocabUI.q)}" autocomplete="off" aria-label="Search vocab"></div>
+  <div class="searchbar">${I.search}<input id="vq" type="search" placeholder="Search ${L.name} or English" value="${esc(vocabUI.q)}" autocomplete="off" aria-label="Search vocab"></div>
   <div class="filters" role="tablist">${[['all', 'All'], ['phrase', 'Phrases'], ['word', 'Words'], ['weak', 'Weak'], ['mine', 'Added by me']].map(([k, t]) => `<button class="filter${vocabUI.filter === k ? ' on' : ''}" data-act="filter" data-f="${k}" role="tab" aria-selected="${vocabUI.filter === k}">${t}</button>`).join('')}</div>
   <ul class="vlist" id="vlist"></ul>`;
   const all = store.cards();
@@ -1600,7 +1580,7 @@ function drawVocabList() {
     return `<li class="vrow">
       <button class="play-mini" data-act="play" data-text="${esc(c.tr)}" aria-label="Listen to ${esc(c.tr)}">${I.play}</button>
       <a class="vmain" href="#item/${encodeURIComponent(c.id)}">
-        ${spell ? `<span class="vtr" lang="tr">${esc(c.tr)}</span>` : ''}
+        ${spell ? `<span class="vtr" lang="${L.tag}">${esc(c.tr)}</span>` : ''}
         <span class="vsay${spell ? '' : ' solo'}">${sayHTML(c.tr)}</span>
         <span class="ven">${esc(c.en)}</span>
         <span class="vmeta">${cardLevel(c)} · ${esc(topicOf(c))}</span>
@@ -1634,17 +1614,17 @@ function detailView(tr, en, { card = null, note = '' } = {}) {
     <h3>Syllables and stress</h3>
     <div class="syllables">${words.map((w) => {
       const r = P.respellWord(w);
-      if (r.stress < 0) return `<div class="sword"><span class="syl"><span lang="tr">${esc(r.syl[0])}</span><small>${esc(r.say[0])}</small></span></div>`;
-      return `<div class="sword">${r.syl.map((sy, i) => `<span class="syl${i === r.stress ? ' st' : ''}"><span lang="tr">${esc(sy)}</span><small>${esc(i === r.stress ? upper(r.say[i]) : r.say[i])}</small></span>`).join('')}</div>`;
+      if (r.stress < 0) return `<div class="sword"><span class="syl"><span lang="${L.tag}">${esc(r.syl[0])}</span><small>${esc(r.say[0])}</small></span></div>`;
+      return `<div class="sword">${r.syl.map((sy, i) => `<span class="syl${i === r.stress ? ' st' : ''}"><span lang="${L.tag}">${esc(sy)}</span><small>${esc(i === r.stress ? upper(r.say[i]) : r.say[i])}</small></span>`).join('')}</div>`;
     }).join('')}</div>
-    <p class="muted small">The highlighted syllable is a little louder and higher. ${words.some((w) => P.CLITICS.has(P.clean(w))) ? 'Small question words like mi and mı carry no stress: your voice rises on the word just before them.' : 'Most Turkish words stress the last syllable.'}</p>
+    <p class="muted small">The highlighted syllable is a little louder and higher. ${esc(L.stressNote(words))}</p>
   </section>
 
-  ${tips.size ? `<section class="block"><h3>Sounds to watch</h3><ul class="tips">${[...tips.values()].map((t) => `<li><span class="letter" lang="tr">${t.k === '2x' ? 'kk' : esc(t.k)}</span><p>${esc(t.tip)}</p></li>`).join('')}</ul></section>` : ''}
+  ${tips.size ? `<section class="block"><h3>Sounds to watch</h3><ul class="tips">${[...tips.values()].map((t) => `<li><span class="letter" lang="${L.tag}">${t.k === '2x' ? 'kk' : esc(t.k)}</span><p>${esc(t.tip)}</p></li>`).join('')}</ul></section>` : ''}
 
   <section class="block"><h3>Say it</h3>${speakHTML(tr)}</section>
 
-  ${isPhrase ? `<section class="block"><h3>Word by word</h3><ul class="breakdown">${words.map((w) => `<li><a href="#word/${encodeURIComponent(w)}" lang="tr">${esc(w)}</a><span>${esc(gl.get(P.clean(w)) || '')}</span></li>`).join('')}</ul></section>` : ''}
+  ${isPhrase ? `<section class="block"><h3>Word by word</h3><ul class="breakdown">${words.map((w) => `<li><a href="#word/${encodeURIComponent(w)}" lang="${L.tag}">${esc(w)}</a><span>${esc(gl.get(P.clean(w)) || '')}</span></li>`).join('')}</ul></section>` : ''}
 
   <section class="block">
     <h3>Memory</h3>
@@ -1704,7 +1684,7 @@ function pronounceView() {
   const sounds = pronUI.tab === 'sounds';
   view.innerHTML = `
   <header class="page-head"><h1>Pronounce</h1>
-    <p class="lede">Turkish is written exactly as it sounds. Learn these sounds once and you can say any word, even one you have never seen. Most of them already exist in Italian.</p></header>
+    <p class="lede">${esc(L.pron.lede)}</p></header>
   <div class="seg" role="tablist">
     <button class="${sounds ? 'on' : ''}" data-act="ptab" data-t="sounds" role="tab" aria-selected="${sounds}">Sound guide</button>
     <button class="${sounds ? '' : 'on'}" data-act="ptab" data-t="mine" role="tab" aria-selected="${!sounds}">My words</button>
@@ -1712,26 +1692,24 @@ function pronounceView() {
   ${sounds ? `
   <section class="block">
     <h2 class="h2">The sound line</h2>
-    <p>Under every phrase you'll see a line like <span class="say inline">${sayHTML('Teşekkür ederim')}</span>. It spells each sound the way you would read it in English, with Italian vowels. The highlighted syllable carries the stress. ə stands for the Turkish ı.</p>
+    <p>Under every phrase you'll see a line like <span class="say inline">${sayHTML(L.pron.lineExample)}</span>. ${esc(L.pron.lineNote)}</p>
   </section>
 
   <section class="block">
     <h2 class="h2">Sound guide</h2>
     <ul class="sounds">${P.SOUNDS.map((s) => `<li>
-      <span class="letter" lang="tr">${s.k === '2x' ? 'kk' : esc(s.k)}</span>
+      <span class="letter" lang="${L.tag}">${s.k === '2x' ? 'kk' : esc(s.k)}</span>
       <div><p class="like">Sounds like <b>${esc(s.say)}</b></p><p>${esc(s.tip)}</p></div>
-      <button class="btn ghost small" data-act="play" data-text="${esc(s.ex)}">${I.play}<span lang="tr">${esc(s.ex)}</span><small>${esc(s.exEn)}</small></button>
+      <button class="btn ghost small" data-act="play" data-text="${esc(s.ex)}">${I.play}<span lang="${L.tag}">${esc(s.ex)}</span><small>${esc(s.exEn)}</small></button>
     </li>`).join('')}</ul>
   </section>
 
   <section class="block">
-    <h2 class="h2">Stress in three rules</h2>
+    <h2 class="h2">${esc(L.pron.rulesTitle)}</h2>
     <ol class="rules">
-      <li><b>Most words stress the last syllable.</b> <span class="say inline">${sayHTML('güzel')}</span>, <span class="say inline">${sayHTML('teşekkürler')}</span>. Adding endings moves the stress along: <span class="say inline">${sayHTML('akşam')}</span>, <span class="say inline">${sayHTML('akşamlar')}</span>.</li>
-      <li><b>In "-iyor" verbs, the vowel before "yor" is stressed.</b> <span class="say inline">${sayHTML('seviyorum')}</span>. With "not" (-m-), it moves one step back: <span class="say inline">${sayHTML('anlamıyorum')}</span>.</li>
-      <li><b>Question words mi, mı, mu, mü are never stressed.</b> Your voice rises on the word before them: <span class="say inline">${sayHTML('Hazır mısın')}</span>.</li>
+      ${L.pron.rules((t) => `<span class="say inline">${sayHTML(t)}</span>`).map((r) => `<li>${r}</li>`).join('\n      ')}
     </ol>
-    <p class="muted small">Common exceptions, like <span lang="tr">merhaba</span>, <span lang="tr">nasıl</span> and place names, are marked correctly in every sound line.</p>
+    <p class="muted small">${L.pron.rulesNote}</p>
   </section>` : myWordsHTML()}`;
   local = {
     ptab: (el) => { pronUI.tab = el.dataset.t; pronounceView(); },
@@ -1748,9 +1726,9 @@ function myWordsHTML() {
   return `<p class="muted small">The words you already know, one letter at a time. Pick a word and tap its letters to see how each one sounds. Or pick a letter to see it in all your words.</p>
   <div class="filters" role="tablist">
     <button class="filter${pronUI.letter === 'all' ? ' on' : ''}" data-act="pletter" data-l="all" role="tab" aria-selected="${pronUI.letter === 'all'}">All</button>
-    ${letters.map((l) => `<button class="filter${pronUI.letter === l ? ' on' : ''}" data-act="pletter" data-l="${esc(l)}" lang="tr" role="tab" aria-selected="${pronUI.letter === l}">${esc(l)}</button>`).join('')}
+    ${letters.map((l) => `<button class="filter${pronUI.letter === l ? ' on' : ''}" data-act="pletter" data-l="${esc(l)}" lang="${L.tag}" role="tab" aria-selected="${pronUI.letter === l}">${esc(l)}</button>`).join('')}
   </div>
-  <ul class="wlist">${list.map((c) => `<li><a href="#letters/${encodeURIComponent(c.tr)}"><span class="wtr" lang="tr">${markedWord(c.tr)}</span><span class="wen">${esc(c.en)}</span></a></li>`).join('')}</ul>`;
+  <ul class="wlist">${list.map((c) => `<li><a href="#letters/${encodeURIComponent(c.tr)}"><span class="wtr" lang="${L.tag}">${markedWord(c.tr)}</span><span class="wen">${esc(c.en)}</span></a></li>`).join('')}</ul>`;
 }
 
 // One word from your vocab, letter by letter.
@@ -1764,17 +1742,17 @@ function lettersView(tr) {
   view.innerHTML = `
   <a class="backlink" href="#pronounce">${I.back}<span>Pronounce</span></a>
   <p class="eyebrow">Letter by letter${i >= 0 ? ` · ${i + 1} of ${list.length}` : ''}</p>
-  <h1 class="ltitle" lang="tr">${esc(card.tr)}</h1>
+  <h1 class="ltitle" lang="${L.tag}">${esc(card.tr)}</h1>
   <p class="en">${esc(card.en)}</p>
   ${audioHTML(card.tr)}
   <section class="block">
     <h3>Tap a letter</h3>
-    <div class="ltiles">${P.tokens(card.tr).map((w) => `<div class="lword">${P.spellOut(w).map((sy) => `<div class="lsyl${sy[0].st ? ' st' : ''}">${sy.map((x) => `<button class="ltile${x.watch ? ' watch' : ''}" data-act="ltap" data-k="${esc(x.k)}" data-c="${esc(x.c)}"><span lang="tr">${esc(x.c)}</span><small>${esc(x.say)}</small></button>`).join('')}</div>`).join('')}</div>`).join('')}</div>
+    <div class="ltiles">${P.tokens(card.tr).map((w) => `<div class="lword">${P.spellOut(w).map((sy) => `<div class="lsyl${sy[0].st ? ' st' : ''}">${sy.map((x) => `<button class="ltile${x.watch ? ' watch' : ''}" data-act="ltap" data-k="${esc(x.k)}" data-c="${esc(x.c)}"><span lang="${L.tag}">${esc(x.c)}</span><small>${esc(x.say)}</small></button>`).join('')}</div>`).join('')}</div>`).join('')}</div>
     <p class="muted small">Boxes are syllables. The highlighted one carries the stress.</p>
     <div id="ltip" aria-live="polite"></div>
   </section>
   <section class="block"><h3>Now say it</h3><p class="muted small">If a letter comes out wrong, the check tells you which one.</p>${speakHTML(card.tr)}</section>
-  ${next && next.tr !== tr ? `<div class="next"><a class="btn primary" href="#letters/${encodeURIComponent(next.tr)}">${I.arrow}<span lang="tr">${esc(next.tr)}</span></a></div>` : ''}`;
+  ${next && next.tr !== tr ? `<div class="next"><a class="btn primary" href="#letters/${encodeURIComponent(next.tr)}">${I.arrow}<span lang="${L.tag}">${esc(next.tr)}</span></a></div>` : ''}`;
   hydrateRecordings();
   local = {
     ltap: (el) => {
@@ -1783,9 +1761,9 @@ function lettersView(tr) {
       const sound = P.SOUNDS.find((x) => x.k === k);
       const others = letterCards().filter((c) => c.tr !== tr && hasLetter(c, k)).slice(0, 5);
       $('#ltip').innerHTML = `<div class="ltip">
-        <p><b lang="tr">${esc(k === '2x' ? el.dataset.c + el.dataset.c : el.dataset.c)}</b> ${sound ? esc(sound.tip) : 'Same as in Italian.'}</p>
-        ${sound ? `<button class="btn ghost small" data-act="play" data-text="${esc(sound.ex)}">${I.play}<span lang="tr">${esc(sound.ex)}</span><small>${esc(sound.exEn)}</small></button>` : ''}
-        ${others.length ? `<p class="muted small">Also in your words: ${others.map((c) => `<a href="#letters/${encodeURIComponent(c.tr)}" lang="tr">${esc(c.tr)}</a>`).join(', ')}</p>` : ''}
+        <p><b lang="${L.tag}">${esc(k === '2x' ? el.dataset.c + el.dataset.c : el.dataset.c)}</b> ${sound ? esc(sound.tip) : 'Same as in Italian.'}</p>
+        ${sound ? `<button class="btn ghost small" data-act="play" data-text="${esc(sound.ex)}">${I.play}<span lang="${L.tag}">${esc(sound.ex)}</span><small>${esc(sound.exEn)}</small></button>` : ''}
+        ${others.length ? `<p class="muted small">Also in your words: ${others.map((c) => `<a href="#letters/${encodeURIComponent(c.tr)}" lang="${L.tag}">${esc(c.tr)}</a>`).join(', ')}</p>` : ''}
       </div>`;
       if (sound) S.speak(sound.ex);
     },
@@ -1795,13 +1773,13 @@ function lettersView(tr) {
 /* ---------- Add your own ---------- */
 
 function askPrompt(en) {
-  return `I'm learning to SPEAK Turkish. I'm a beginner and a native Italian speaker.
-How do I say this in natural, everyday spoken Turkish: "${en}"
+  return `I'm learning to SPEAK ${L.name}. I'm a beginner and a native Italian speaker.
+How do I say this in natural, everyday spoken ${L.name}: "${en}"
 
 Reply ONLY with lines in this exact format, nothing else:
-Turkish | English meaning
+${L.name} | English meaning
 
-First line: the full Turkish phrase and its meaning.
+First line: the full ${L.name} phrase and its meaning.
 Then one line for each word in the phrase, with what that word means on its own.`;
 }
 
@@ -1834,24 +1812,24 @@ function addView() {
     <h2 class="h2">Ask Claude</h2>
     <p class="muted">Free with your Claude subscription. Type what you want to say, copy the question, paste it into Claude, then paste Claude's answer here.</p>
     <label for="ask-en">What do you want to say?</label>
-    <input id="ask-en" type="text" placeholder="I can't wait to see you" autocomplete="off">
+    <input id="ask-en" type="text" placeholder="${esc(L.add.askExample)}" autocomplete="off">
     <div class="row">
       <button class="btn primary" data-act="copyask">${I.copy}<span>Copy question</span></button>
       <a class="btn" href="https://claude.ai/new" target="_blank" rel="noopener">Open Claude</a>
     </div>
     <textarea id="ask-fallback" class="fallback" rows="6" hidden readonly></textarea>
     <label for="ask-paste">Claude's answer</label>
-    <textarea id="ask-paste" rows="5" placeholder="Seni görmek için sabırsızlanıyorum | I can't wait to see you"></textarea>
+    <textarea id="ask-paste" rows="5" placeholder="${esc(L.add.answerExample)}"></textarea>
     <div class="row"><button class="btn" data-act="importask">${I.plus}<span>Add these</span></button></div>
     <p class="formmsg" id="ask-msg" aria-live="polite"></p>
   </section>
 
   <section class="panel">
     <h2 class="h2">Add by hand</h2>
-    <label for="man-tr">Turkish</label>
-    <input id="man-tr" type="text" lang="tr" autocomplete="off" placeholder="Seni çok seviyorum">
+    <label for="man-tr">${L.name}</label>
+    <input id="man-tr" type="text" lang="${L.tag}" autocomplete="off" placeholder="${esc(L.add.handExample)}">
     <label for="man-en">Meaning</label>
-    <input id="man-en" type="text" autocomplete="off" placeholder="I love you very much">
+    <input id="man-en" type="text" autocomplete="off" placeholder="${esc(L.add.handMeaning)}">
     <div class="row"><button class="btn" data-act="addman">${I.plus}<span>Save</span></button></div>
     <p class="formmsg" id="man-msg" aria-live="polite"></p>
   </section>`;
@@ -1874,7 +1852,7 @@ function addView() {
     importask() {
       const rows = parseLines($('#ask-paste').value);
       const msg = $('#ask-msg');
-      if (!rows.length) { msg.textContent = 'No lines in the "Turkish | meaning" format were found.'; return; }
+      if (!rows.length) { msg.textContent = `No lines in the "${L.name} | meaning" format were found.`; return; }
       const n = addCards(rows);
       msg.textContent = n ? `Added ${plural(n, 'card', 'cards')} to your vocab.` : 'All of these were already in your vocab.';
       if (n) $('#ask-paste').value = '';
@@ -1883,7 +1861,7 @@ function addView() {
       const tr = $('#man-tr').value.trim();
       const en = $('#man-en').value.trim();
       const msg = $('#man-msg');
-      if (!tr || !en) { msg.textContent = 'Fill in both the Turkish and the meaning.'; return; }
+      if (!tr || !en) { msg.textContent = `Fill in both the ${L.name} and the meaning.`; return; }
       const n = addCards([{ tr, en }]);
       msg.textContent = n ? 'Saved.' : 'That one is already in your vocab.';
       if (n) { $('#man-tr').value = ''; $('#man-en').value = ''; }
@@ -1897,7 +1875,7 @@ const voiceUI = { sample: 0 };
 
 function settingsView() {
   const s = settings();
-  const voices = S.turkishVoices();
+  const voices = S.deviceVoices();
   const st = sync.status();
   const reset = { armed: false };
 
@@ -1908,14 +1886,14 @@ function settingsView() {
     <h2 class="h2">You</h2>
     <label for="set-name">Your name</label>
     <input id="set-name" type="text" value="${esc(s.name)}" autocomplete="given-name">
-    <label class="switch"><input id="set-spell" type="checkbox" ${s.showSpelling ? 'checked' : ''}><span>Show Turkish spelling</span></label>
-    <p class="muted small">Turn it off to learn from sound only: you'll see just the sound line. Turkish spelling is so regular that reading comes almost free later.</p>
+    <label class="switch"><input id="set-spell" type="checkbox" ${s.showSpelling ? 'checked' : ''}><span>Show ${L.name} spelling</span></label>
+    <p class="muted small">${esc(L.settings.spellNote)}</p>
   </section>
 
   <section class="block" id="voice">
     <h2 class="h2">Voice</h2>
     <p class="muted small">Pick a sentence, play it in each voice, and choose the one you want to learn from.</p>
-    <div class="filters samples" aria-label="Sample sentence">${SAMPLES.map((t, i) => `<button class="filter${i === voiceUI.sample ? ' on' : ''}" data-act="sample" data-i="${i}" lang="tr">${esc(t)}</button>`).join('')}</div>
+    <div class="filters samples" aria-label="Sample sentence">${SAMPLES.map((t, i) => `<button class="filter${i === voiceUI.sample ? ' on' : ''}" data-act="sample" data-i="${i}" lang="${L.tag}">${esc(t)}</button>`).join('')}</div>
     <div id="voices"></div>
     <label for="set-volume">Volume <output id="volume-out">${Math.round((s.volume ?? 0.7) * 100)}%</output></label>
     <input id="set-volume" type="range" min="0" max="1" step="0.05" value="${s.volume ?? 0.7}">
@@ -1925,9 +1903,9 @@ function settingsView() {
       <p>The device voice reads anything without a recording, like phrases you add yourself.</p>
       ${voices.length ? `<label for="set-voice">Device voice</label>
         <select id="set-voice"><option value="">Best available</option>${voices.map((v) => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === s.voiceURI ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select>`
-      : '<p class="notice">No Turkish device voice found yet.</p>'}
-      <p><b>Better device voice, Mac:</b> System Settings, Accessibility, Spoken Content, System voice, Manage Voices. Find Turkish and download Yelda (Enhanced).</p>
-      <p><b>iPhone:</b> Settings, Accessibility, Spoken Content, Voices, Turkish. Download Yelda (Enhanced).</p>
+      : `<p class="notice">${esc(L.settings.noDevice)}</p>`}
+      <p><b>Better device voice, Mac:</b> ${esc(L.settings.betterMac)}</p>
+      <p><b>iPhone:</b> ${esc(L.settings.betterPhone)}</p>
     </details>
   </section>
 
@@ -1992,7 +1970,7 @@ function settingsView() {
   const say = (t) => { const m = $('#s-msg'); if (m) m.textContent = t || ''; };
 
   const voiceRow = (v) => {
-    const inUse = (settings().recordedVoice || 'emel') === v.id;
+    const inUse = (settings().recordedVoice || L.defaultVoice) === v.id;
     return `<li class="voice${inUse ? ' chosen' : ''}">
       <button class="play-mini" data-act="tryvoice" data-v="${v.id}" aria-label="Play ${esc(v.name)}">${I.play}</button>
       <div class="vinfo"><b>${esc(v.name)}</b><small>${esc(v.about)}</small></div>
@@ -2000,13 +1978,11 @@ function settingsView() {
     </li>`;
   };
   const drawVoices = () => {
-    const device = { id: 'device', name: 'Device voice', full: true, about: 'Built into this phone or computer (Yelda). Reads anything, sounds more robotic.' };
-    $('#voices').innerHTML = `
-      <h3 class="vgroup">Native Turkish · whole course recorded</h3>
-      <ul class="voices">${VOICES.filter((v) => v.native).map(voiceRow).join('')}${voiceRow(device)}</ul>
-      <h3 class="vgroup">Multilingual · samples only</h3>
-      <p class="muted small">These speak Turkish as a second language. If you like one, ask Claude to record the whole course in it.</p>
-      <ul class="voices">${VOICES.filter((v) => !v.native).map(voiceRow).join('')}</ul>`;
+    const device = { id: 'device', name: 'Device voice', full: true, about: L.settings.deviceAbout };
+    $('#voices').innerHTML = L.settings.voiceGroups.map(([title, pick, note], i) => `
+      <h3 class="vgroup">${esc(title)}</h3>
+      ${note ? `<p class="muted small">${esc(note)}</p>` : ''}
+      <ul class="voices">${VOICES.filter(pick).map(voiceRow).join('')}${i ? '' : voiceRow(device)}</ul>`).join('');
   };
   drawVoices();
 
@@ -2070,7 +2046,7 @@ function settingsView() {
       const blob = new Blob([JSON.stringify(store.state, null, 1)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `konus-backup-${new Date().toLocaleDateString('en-CA')}.json`;
+      a.download = `konus-backup-${L.backupSuffix}${new Date().toLocaleDateString('en-CA')}.json`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     },
@@ -2232,21 +2208,16 @@ document.addEventListener('keydown', (e) => {
 
 // Words added for you, once per device. Each batch has a number, so a later batch
 // still arrives on a device that already has the earlier ones.
-const SEEDS = [
-  [1, 'Merhaba!', 'Hello!', 'known'],
-  [1, 'Seni seviyorum.', 'I love you.', 'known'],
-  [2, 'Konuş!', 'Speak! Talk! (and the name of this app)', 'mine'],
-];
 function seedKnown() {
   const done = store.state.seeded === true ? 1 : store.state.seeded || 0;
   const now = Date.now();
-  for (const [batch, tr, en, src] of SEEDS) {
+  for (const [batch, tr, en, src] of L.seeds) {
     if (batch <= done) continue;
     const kind = kindOf(tr);
     const id = cardId(kind, tr);
     if (!store.card(id)) store.putCard(srs.grade({ id, kind, tr, en, src, rank: 'A1', added: now }, 3, now));
   }
-  store.markSeeded(Math.max(...SEEDS.map((s) => s[0])));
+  store.markSeeded(Math.max(...L.seeds.map((s) => s[0])));
 }
 
 for (const type of ['touchend', 'click']) document.addEventListener(type, S.unlockAudio, { capture: true, once: true });
@@ -2263,7 +2234,7 @@ function toast(text) {
 window.addEventListener('speech-error', (e) => {
   const noVoice = ['language-unavailable', 'voice-unavailable', 'synthesis-unavailable'].includes(e.detail);
   toast(noVoice
-    ? 'No Turkish voice on this device. iPhone: Settings, Accessibility, Spoken Content, Voices, Turkish.'
+    ? L.noVoice
     : 'The audio could not play. Check that silent mode is off and the volume is up, then tap again.');
 });
 

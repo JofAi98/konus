@@ -3,6 +3,7 @@
 // Each card is one Firestore document; the newest edit wins.
 import { firebaseConfig, ownerUid } from './firebase-config.js';
 import { store } from './store.js';
+import { L } from './lang.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2';
 export const configured = !!(firebaseConfig && firebaseConfig.apiKey);
@@ -16,6 +17,8 @@ const subs = new Set();
 const pending = new Set();
 let metaDirty = false, timer = null, unsubCards = null, unsubMeta = null;
 
+// Turkish lives at the top of your account's folder, every other language in its own branch.
+const root = () => ['users', user.uid, ...L.cloudPath];
 const emit = () => subs.forEach((fn) => fn(status()));
 const isOwner = (u) => !!u && (!ownerUid || u.uid === ownerUid);
 export const status = () => ({
@@ -141,9 +144,8 @@ export async function resetPassword(email) {
 export async function signOut() { if (auth) await A.signOut(auth); }
 
 function start() {
-  const uid = user.uid;
   let first = true;
-  unsubCards = F.onSnapshot(F.collection(fdb, 'users', uid, 'cards'), (snap) => {
+  unsubCards = F.onSnapshot(F.collection(fdb, ...root(), 'cards'), (snap) => {
     const remoteAt = new Map();
     snap.docChanges().forEach((ch) => {
       const r = ch.doc.data();
@@ -161,7 +163,7 @@ function start() {
     }
     lastSync = Date.now(); emit();
   }, (err) => { state = 'error'; errorMsg = err.message; emit(); });
-  unsubMeta = F.onSnapshot(F.doc(fdb, 'users', uid, 'meta', 'main'), (snap) => {
+  unsubMeta = F.onSnapshot(F.doc(fdb, ...root(), 'meta', 'main'), (snap) => {
     if (snap.exists() && !snap.metadata.hasPendingWrites) store.mergeMeta(snap.data());
   });
 }
@@ -178,26 +180,27 @@ function schedule(delay = 1500) {
 
 async function flush() {
   if (!user || !navigator.onLine) return;
+  // Taken now, before any wait: you may switch language while this is on its way.
+  const lang = L.id;
+  const path = root();
   const ids = [...pending];
   pending.clear();
+  const cards = ids.map((id) => store.state.cards[id]).filter(Boolean);
+  const meta = metaDirty ? store.metaForSync() : null;
+  metaDirty = false;
   try {
-    for (let i = 0; i < ids.length; i += 400) {
+    for (let i = 0; i < cards.length; i += 400) {
       const batch = F.writeBatch(fdb);
-      for (const id of ids.slice(i, i + 400)) {
-        const c = store.state.cards[id];
-        if (c) batch.set(F.doc(fdb, 'users', user.uid, 'cards', id), c);
-      }
+      for (const c of cards.slice(i, i + 400)) batch.set(F.doc(fdb, ...path, 'cards', c.id), c);
       await batch.commit();
     }
-    if (metaDirty) {
-      metaDirty = false;
-      await F.setDoc(F.doc(fdb, 'users', user.uid, 'meta', 'main'), store.metaForSync());
-    }
+    if (meta) await F.setDoc(F.doc(fdb, ...path, 'meta', 'main'), meta);
     lastSync = Date.now(); state = 'on'; errorMsg = ''; emit();
   } catch (e) {
+    errorMsg = 'Sync paused. It will retry.'; emit();
+    if (lang !== L.id) return; // that language catches up the next time you open it
     ids.forEach((id) => pending.add(id));
     metaDirty = true;
-    errorMsg = 'Sync paused. It will retry.'; emit();
     schedule(15000);
   }
 }

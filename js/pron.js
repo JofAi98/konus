@@ -7,6 +7,8 @@ const FRONT = 'eiöüî';
 export const trLower = (s) => String(s).toLocaleLowerCase('tr');
 export const clean = (w) => trLower(w).replace(/[^a-zçğıöşüâîû]/g, '');
 const isV = (c) => !!c && VOWELS.includes(c);
+// What the speech check treats as the same word; Turkish spelling leaves nothing to fold.
+export const fold = (w) => w;
 
 // Words whose stress is NOT on the last syllable (index from the start).
 // Everything else follows the default rule: last syllable.

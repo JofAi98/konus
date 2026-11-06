@@ -21,11 +21,11 @@ export const SAMPLES = [
   'Görüşürüz, iyi geceler.',
 ];
 
-export const audioKey = (text) => trLower(text).replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+export const audioKey = (text, lower = trLower) => lower(text).replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 
 // FNV-1a over the UTF-8 bytes: a short, stable file name for each phrase.
-export function audioHash(text) {
+export function audioHash(text, lower = trLower) {
   let h = 0x811c9dc5;
-  for (const b of new TextEncoder().encode(audioKey(text))) { h ^= b; h = Math.imul(h, 0x01000193) >>> 0; }
+  for (const b of new TextEncoder().encode(audioKey(text, lower))) { h ^= b; h = Math.imul(h, 0x01000193) >>> 0; }
   return h.toString(16).padStart(8, '0');
 }

@@ -3,10 +3,7 @@
 // (A1 is 1 to 30, A2 is 31 to 60...). Only practice at your own rank earns XP, so the top
 // level of a rank means you've done that rank's work, and its exam opens there.
 // About 100 XP a day (15 to 20 minutes) reaches level 20 in a month.
-import { LESSONS } from './course.js';
-import { DRILLS } from './drills.js';
-import { DIALOGUES } from './dialogues.js';
-import { STORIES } from './stories.js';
+import { LESSONS, DRILLS, DIALOGUES, STORIES } from './lang.js';
 
 export const XP = {
   lesson: 30, drill: 30, dialogue: 25, story: 20, again: 10,
@@ -97,33 +94,16 @@ export const FEATURES = [
 export const KIND = { lesson: 'Lesson', drill: 'Build', dialogue: 'Talk', story: 'Story' };
 const ORDER = { lesson: 0, drill: 1, dialogue: 2, story: 3 };
 
-export const PATH = [
+const buildPath = () => [
   ...LESSONS.map((l) => ({ kind: 'lesson', id: l.id, level: l.level, rank: l.rank, title: l.title, sub: l.goal, href: `#lesson/${l.id}` })),
   ...DRILLS.map((d) => ({ kind: 'drill', id: d.id, level: d.level, rank: d.rank, title: d.title, sub: d.goal, href: `#drill/${d.id}` })),
   ...DIALOGUES.map((d) => ({ kind: 'dialogue', id: d.id, level: d.level, rank: d.rank, title: d.title, sub: d.scene, href: `#talk/${d.id}` })),
   ...STORIES.map((s) => ({ kind: 'story', id: s.id, level: s.level, rank: s.rank, title: s.title, sub: s.en, href: `#story/${s.id}` })),
 ].sort((a, b) => rankIndex(a.rank) - rankIndex(b.rank) || a.level - b.level || ORDER[a.kind] - ORDER[b.kind]);
 
-// What the next rank holds, shown locked until its exam is passed.
-export const NEXT_RANK = {
-  A2: [
-    { kind: 'drill', title: 'Habits: -ir and -er', sub: 'I usually drink tea. Do you smoke?' },
-    { kind: 'drill', title: 'The object: -i', sub: 'The film, the book, her mother: when Turkish marks "the"' },
-    { kind: 'drill', title: 'With: -le', sub: 'With you, by bus, coffee with milk' },
-    { kind: 'drill', title: 'More and most: daha, en', sub: 'Better, the best, the most beautiful' },
-    { kind: 'drill', title: 'Must and need: -meli, lazım', sub: 'I have to go, you should rest' },
-    { kind: 'drill', title: 'Was and were: -di after nouns', sub: 'I was at home, it was cold' },
-    { kind: 'drill', title: 'If: -se', sub: 'If you come, if it rains' },
-    { kind: 'drill', title: 'When and while: -ince, -ken', sub: 'When I arrive, while I was cooking' },
-    { kind: 'drill', title: 'They say: -miş', sub: 'Things you heard but didn\'t see' },
-    { kind: 'dialogue', title: 'At the doctor', sub: 'Say what hurts and understand the answer' },
-    { kind: 'dialogue', title: 'On the phone with her grandmother', sub: 'No face to help you: only your ears' },
-    { kind: 'dialogue', title: 'A small argument', sub: 'Disagree kindly, then make up' },
-    { kind: 'story', title: 'Bayram', sub: 'A holiday visit to the whole family' },
-    { kind: 'lesson', title: 'Feelings and opinions', sub: 'I think, I feel, I\'m not sure' },
-    { kind: 'lesson', title: 'Home and family words', sub: 'Every relative has its own name in Turkish' },
-  ],
-};
+export let PATH = buildPath();
+// The path of the language you just switched to.
+export function refreshPath() { PATH = buildPath(); }
 
 export function isOpen(item, { level, rank, progress }) {
   if (progress[item.id]) return true;

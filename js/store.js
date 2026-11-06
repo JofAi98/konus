@@ -1,14 +1,14 @@
 // Everything you learn lives here first (on this device), then sync copies it to your account.
-import { clean } from './pron.js';
+import { L, P } from './lang.js';
 
-const KEY = 'konus.v1';
+let KEY = L.storeKey;
 const blank = () => ({
   v: 1,
   cards: {},
   progress: {},
   words: {},
   stats: { days: {} },
-  settings: { name: 'Giosuè', showSpelling: true, recordedVoice: 'emel', voiceURI: '', rate: 0.9, volume: 0.7, settingsAt: 0 },
+  settings: { name: 'Giosuè', showSpelling: true, recordedVoice: L.defaultVoice, voiceURI: '', rate: 0.9, volume: 0.7, settingsAt: 0 },
   metaAt: 0,
 });
 
@@ -56,7 +56,7 @@ export const weekDays = (t) => {
   const m = monday(t);
   return Array.from({ length: 7 }, (_, i) => { const d = new Date(m); d.setDate(m.getDate() + i); return dayKey(d); });
 };
-export const cardId = (kind, tr) => `${kind === 'word' ? 'w' : 'p'}:${String(tr).split(/\s+/).map(clean).filter(Boolean).join('_')}`;
+export const cardId = (kind, tr) => `${kind === 'word' ? 'w' : 'p'}:${String(tr).split(/\s+/).map(P.clean).filter(Boolean).join('_')}`;
 
 export const store = {
   get state() { return state; },

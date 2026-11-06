@@ -1,11 +1,11 @@
 // Listening (recorded voices, then the device voice), checking (speech recognition) and recording.
-import { trLower, SOUNDS } from './pron.js';
+import { L, P } from './lang.js';
 import { audioHash } from './voices.js';
 
 /* ---------- Recorded voices ---------- */
 
 const recorded = new Map(); // voice id -> Set of hashes it has
-let chosenVoice = 'emel';
+let chosenVoice = L.defaultVoice;
 let player = null;
 
 export async function loadVoice(id) {
@@ -16,7 +16,7 @@ export async function loadVoice(id) {
   } catch { recorded.set(id, new Set()); }
 }
 export function setRecordedVoice(id) {
-  chosenVoice = id || 'emel';
+  chosenVoice = id || L.defaultVoice;
   loadVoice(chosenVoice).then(() => setTimeout(() => keepOffline(chosenVoice), 4000));
 }
 
@@ -34,7 +34,7 @@ async function keepOffline(voice) {
 }
 
 function playFile(voice, text, slow, fast = false) {
-  const h = audioHash(text);
+  const h = audioHash(text, P.trLower);
   if (!recorded.get(voice)?.has(h)) return null;
   const url = `audio/${voice}/${h}.mp3`;
   const speed = Math.min(1.5, Math.max(0.5, (slow ? 0.7 : fast ? 1.2 : 1) * (rate / 0.9)));
@@ -132,7 +132,7 @@ export function stopSpeaking() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
-/* ---------- Turkish voice ---------- */
+/* ---------- Device voice ---------- */
 
 let voices = [];
 let preferredURI = '';
@@ -140,7 +140,7 @@ let rate = 0.9;
 
 function loadVoices() {
   if (!('speechSynthesis' in window)) return;
-  voices = speechSynthesis.getVoices().filter((v) => /^tr/i.test(v.lang));
+  voices = speechSynthesis.getVoices().filter((v) => L.voiceRe.test(v.lang));
 }
 if ('speechSynthesis' in window) {
   loadVoices();
@@ -148,13 +148,13 @@ if ('speechSynthesis' in window) {
 }
 
 export const canSpeak = () => 'speechSynthesis' in window;
-export const turkishVoices = () => { loadVoices(); return voices; };
+export const deviceVoices = () => { loadVoices(); return voices; };
 export function setVoice(uri, r) { preferredURI = uri || ''; if (r) rate = r; }
 
 function pickVoice() {
   loadVoices();
   if (preferredURI) { const v = voices.find((x) => x.voiceURI === preferredURI); if (v) return v; }
-  const score = (v) => (/premium|enhanced|natural|neural/i.test(v.name) ? 3 : 0) + (/google/i.test(v.name) ? 2 : 0) + (v.localService ? 1 : 0);
+  const score = (v) => (/premium|enhanced|natural|neural/i.test(v.name) ? 3 : 0) + (/google/i.test(v.name) ? 2 : 0) + (v.localService ? 1 : 0) + (v.lang.replace('_', '-') === L.locale ? 2 : 0);
   return [...voices].sort((a, b) => score(b) - score(a))[0] || null;
 }
 
@@ -218,7 +218,7 @@ function deviceSpeak(text, { slow = false, fast = false } = {}) {
     const go = () => {
       const u = new SpeechSynthesisUtterance(text);
       current = u; // keep a reference: some engines drop utterances nothing points to
-      u.lang = 'tr-TR';
+      u.lang = L.locale;
       const v = pickVoice();
       if (v) u.voice = v;
       u.rate = slow ? Math.max(0.45, rate * 0.62) : fast ? rate * 1.2 : rate;
@@ -289,7 +289,7 @@ export function listen({ onInterim } = {}) {
     const open = (retry) => {
       const r = new SR();
       rec = r;
-      r.lang = 'tr-TR';
+      r.lang = L.locale;
       r.interimResults = true;
       r.maxAlternatives = 5;
       r.continuous = false;
@@ -345,9 +345,11 @@ function numToTr(n) {
   return String(n);
 }
 
+const NUMBERS = { tr: numToTr };
+
 export function normWords(s) {
-  return trLower(s).replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
-    .flatMap((t) => (/^\d+$/.test(t) ? numToTr(+t).split(' ') : [t]));
+  return P.trLower(s).replace(/[’'`]/g, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)
+    .flatMap((t) => (/^\d+$/.test(t) ? NUMBERS[L.id](+t).split(' ') : [t]));
 }
 
 function lev(a, b) {
@@ -359,7 +361,7 @@ function lev(a, b) {
   }
   return d;
 }
-const sim = (a, b) => (a === b ? 1 : 1 - lev(a, b)[a.length][b.length] / Math.max(a.length, b.length, 1));
+const sim = (x, y) => { const a = P.fold(x), b = P.fold(y); return a === b ? 1 : 1 - lev(a, b)[a.length][b.length] / Math.max(a.length, b.length, 1); };
 
 function alignWords(target, heard) {
   const n = target.length, m = heard.length;
@@ -384,9 +386,9 @@ function alignWords(target, heard) {
   return out;
 }
 
-// Turkish is spelled as it sounds, so a letter swap is a sound swap.
-const PAIRS = { 'ş>s': 'ş', 'ç>c': 'ç', 'ç>s': 'ç', 'c>ç': 'c', 'ı>i': 'ı', 'i>ı': 'ı', 'ö>o': 'ö', 'ü>u': 'ü', 'ö>e': 'ö', 'ü>i': 'ü', 'u>ü': 'ü', 'o>ö': 'ö', 'z>s': 'z', 's>z': 's', 'k>g': 'k', 'g>k': 'g' };
-const tipFor = (k) => SOUNDS.find((s) => s.k === k)?.tip;
+// Spelled as it sounds, so a letter swap is a sound swap.
+const PAIRS = { tr: { 'ş>s': 'ş', 'ç>c': 'ç', 'ç>s': 'ç', 'c>ç': 'c', 'ı>i': 'ı', 'i>ı': 'ı', 'ö>o': 'ö', 'ü>u': 'ü', 'ö>e': 'ö', 'ü>i': 'ü', 'u>ü': 'ü', 'o>ö': 'ö', 'z>s': 'z', 's>z': 's', 'k>g': 'k', 'g>k': 'g' } };
+const tipFor = (k) => P.SOUNDS.find((s) => s.k === k)?.tip;
 
 function soundHints(target, heard) {
   if (!heard || target === heard) return [];
@@ -397,7 +399,7 @@ function soundHints(target, heard) {
     if (i > 0 && j > 0 && target[i - 1] === heard[j - 1] && d[i][j] === d[i - 1][j - 1]) { i--; j--; continue; }
     if (i > 0 && j > 0 && d[i][j] === d[i - 1][j - 1] + 1) {
       const key = `${target[i - 1]}>${heard[j - 1]}`;
-      if (PAIRS[key]) hints.push({ expect: target[i - 1], got: heard[j - 1], tip: tipFor(PAIRS[key]) });
+      if (PAIRS[L.id][key]) hints.push({ expect: target[i - 1], got: heard[j - 1], tip: tipFor(PAIRS[L.id][key]) });
       i--; j--; continue;
     }
     if (i > 0 && d[i][j] === d[i - 1][j] + 1) {
